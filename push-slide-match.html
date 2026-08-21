@@ -1,0 +1,1852 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>推推消消乐</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", sans-serif;
+    background: linear-gradient(160deg, #1f2b3a, #2c3e50);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #app { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #hud {
+    width: 100%;
+    display: flex; align-items: center; gap: 14px;
+    color: #fff;
+  }
+  #progressBar {
+    flex: 1; height: 18px; border-radius: 9px;
+    background: rgba(0,0,0,0.35); overflow: hidden;
+  }
+  #progressFill {
+    height: 100%; width: 0%; border-radius: 9px;
+    background: linear-gradient(90deg, #ffd54f, #ff8a65);
+    transition: width 0.3s;
+  }
+  #controls button {
+    background: #ff7043; border: none; color: #fff;
+    font-size: 14px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+  }
+  #controls button:hover { background: #f4511e; }
+  #board {
+    background: rgba(0,0,0,0.35);
+    border-radius: 14px;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+  }
+  #msg { color: #ffd54f; font-size: 15px; min-height: 20px; font-weight: bold; }
+  #winOverlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px;
+  }
+  #winOverlay.hidden { display: none; }
+  #winText { color: #ffd54f; font-size: 40px; font-weight: bold; }
+  #winOverlay button {
+    background: #66bb6a; border: none; color: #fff;
+    font-size: 18px; padding: 10px 26px; border-radius: 10px; cursor: pointer;
+  }
+  #winOverlay button:hover { background: #43a047; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div id="hud">
+      <span id="progressLabel">进度 0/24</span>
+      <div id="progressBar"><div id="progressFill"></div></div>
+      <div id="controls">
+        <button id="btnUndo">撤销</button>
+        <button id="btnShuffle">洗牌</button>
+        <button id="btnHint">提示</button>
+        <button id="btnRestart">重开</button>
+      </div>
+    </div>
+    <canvas id="board"></canvas>
+    <div id="msg"></div>
+    <div id="winOverlay" class="hidden">
+      <div id="winText">恭喜通关！</div>
+      <button id="winRestart">再来一局</button>
+    </div>
+  </div>
+<script>
+"use strict";
+
+// ================= DEBUG INFRASTRUCTURE =================
+// Enabled via ?debug=1 URL param, or by setting window.__FORCE_DEBUG before load.
+const DEBUG_ENABLED = new URLSearchParams(window.location.search).has('debug') ||
+                      window.__FORCE_DEBUG === true;
+window.__DEBUG_ENABLED = DEBUG_ENABLED;
+window.__LOGS = [];          // structured debug log ring buffer
+window.__LOG_SEQ = 0;
+window.__LOG_STEP = 0;       // increments on every user input/resolve event
+
+function dbg(entry) {
+  if (!DEBUG_ENABLED) return;
+  entry.seq = ++window.__LOG_SEQ;
+  entry.t = Math.round(performance.now());
+  entry.step = window.__LOG_STEP;
+  window.__LOGS.push(entry);
+  if (window.__LOGS.length > 20000) window.__LOGS.splice(0, window.__LOGS.length - 20000);
+}
+
+function dbgStep() { if (DEBUG_ENABLED) window.__LOG_STEP++; }
+
+// ================= CONFIG =================
+const COLS = 8, ROWS = 8;
+const PATTERNS = 6;            // pattern ids 1..6
+const BLOCKS_PER_PATTERN = 8;  // 6 * 8 = 48 blocks, 16 empty on 8x8
+const TOTAL_PAIRS = (PATTERNS * BLOCKS_PER_PATTERN) / 2; // 24
+
+// ================= GAME CORE (pure logic, no DOM) =================
+class GameCore {
+  static DIRS = {
+    up:    { dr: -1, dc: 0 },
+    down:  { dr:  1, dc: 0 },
+    left:  { dr:  0, dc: -1 },
+    right: { dr:  0, dc: 1 },
+  };
+
+  constructor() {
+    this.grid = null;      // ROWS x COLS, 0 = empty, 1..6 = pattern
+    this.blocks = null;    // [{id, pattern, r, c}]
+    this.clearedPairs = 0;
+    this.nextId = 1;
+    this.undoSnapshot = null; // snapshot of the board before the last elimination
+    this.init();
+  }
+
+  init() {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      this._generateLayout();
+      if (this.findHint() !== null) return;
+    }
+    this._generateLayout();
+  }
+
+  _generateLayout() {
+    this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    this.blocks = [];
+    this.clearedPairs = 0;
+    this.nextId = 1;
+    this.undoSnapshot = null;   // a fresh board has no undo history
+
+    const cells = [];
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        cells.push([r, c]);
+    this._shuffleArray(cells);
+
+    let used = 0;
+    const totalBlocks = PATTERNS * BLOCKS_PER_PATTERN;
+    for (const [r, c] of cells) {
+      if (used >= totalBlocks) break;
+      const pattern = 1 + (used % PATTERNS);
+      this.grid[r][c] = pattern;
+      this.blocks.push({ id: this.nextId++, pattern, r, c });
+      used++;
+    }
+  }
+
+  _shuffleArray(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+
+  getGrid() { return this.grid; }
+  getBlocks() { return this.blocks; }
+  getTotalPairs() { return TOTAL_PAIRS; }
+  getClearedPairs() { return this.clearedPairs; }
+  getProgress() { return this.clearedPairs / TOTAL_PAIRS; }
+  getPatternCount() { return this.blocks.length; }
+
+  getPushGroup(r, c, dir) {
+    const start = (DEBUG_ENABLED && !this._probing) ? dbg({ type: 'getPushGroup', r, c, dir, srcPattern: this.grid && this.grid[r] ? this.grid[r][c] : undefined }) : null;
+    if (!this.inBounds(r, c) || this.grid[r][c] === 0) {
+      start && (start.result = null);
+      return null;
+    }
+    const d = GameCore.DIRS[dir];
+    const group = [];
+    const seen = new Set();
+    let cr = r, cc = c;
+    while (this.inBounds(cr, cc) && this.grid[cr][cc] !== 0) {
+      const key = cr + "," + cc;
+      if (seen.has(key)) break;
+      seen.add(key);
+      const b = this.blocks.find(x => x.r === cr && x.c === cc);
+      group.push(b ? { id: b.id, pattern: b.pattern, r: cr, c: cc } : { id: 0, pattern: this.grid[cr][cc], r: cr, c: cc });
+      cr += d.dr;
+      cc += d.dc;
+    }
+    start && (start.result = group.map(m => ({ id: m.id, p: m.pattern, r: m.r, c: m.c })));
+    return group;
+  }
+
+  getMaxSlideDistance(group, dir) {
+    const d = GameCore.DIRS[dir];
+    // The front is the member furthest along `dir`. For a group built along
+    // one axis this is the tail for the initial direction and the head for the
+    // reverse direction, which lets a fixed group slide both ways.
+    let front = group[0];
+    for (const m of group) {
+      if (m.r * d.dr + m.c * d.dc > front.r * d.dr + front.c * d.dc) front = m;
+    }
+    let dist = 0;
+    let cr = front.r + d.dr, cc = front.c + d.dc;
+    while (this.inBounds(cr, cc) && this.grid[cr][cc] === 0) {
+      dist++;
+      cr += d.dr;
+      cc += d.dc;
+    }
+    if (!this._probing) {
+      dbg({ type: 'maxSlideDistance', dir, front: { r: front.r, c: front.c, p: front.pattern }, dist,
+            stop: this.inBounds(cr, cc) ? { r: cr, c: cc, p: this.grid[cr][cc] } : 'boundary' });
+    }
+    return dist;
+  }
+
+  inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
+
+  checkMatch(r, c, overlay = null) {
+    const pat = (overlay && overlay.occupied.has(r + "," + c))
+      ? overlay.occupied.get(r + "," + c)
+      : this.grid[r][c];
+    const scan = DEBUG_ENABLED ? [] : null;
+    if (pat === 0) return null;
+    for (const dir of ['up', 'down', 'left', 'right']) {
+      const d = GameCore.DIRS[dir];
+      let cr = r + d.dr, cc = c + d.dc;
+      while (this.inBounds(cr, cc)) {
+        let v = 0;
+        if (overlay && overlay.occupied.has(cr + "," + cc)) {
+          v = overlay.occupied.get(cr + "," + cc);
+        } else if (overlay && overlay.vacated.has(cr + "," + cc)) {
+          v = 0;
+        } else {
+          v = this.grid[cr][cc];
+        }
+        if (v !== 0) {
+          if (scan) scan.push({ dir, hit: { r: cr, c: cc, v }, same: v === pat });
+          if (v === pat) {
+            if (!this._probing) dbg({ type: 'checkMatch', r, c, pat, overlay: overlay ? { vacated: [...overlay.vacated], occupied: [...overlay.occupied] } : null, result: { match: true, r: cr, c: cc, dir }, scan });
+            return { r: cr, c: cc };
+          }
+          if (scan) scan.push({ dir, result: 'blocked', by: { r: cr, c: cc, v }, expected: pat });
+          break; // blocked in this direction, try next
+        }
+        cr += d.dr;
+        cc += d.dc;
+      }
+      if (scan && !this.inBounds(cr, cc)) {
+        scan.push({ dir, result: 'boundary' });
+      }
+    }
+    if (!this._probing) dbg({ type: 'checkMatch', r, c, pat, overlay: overlay ? { vacated: [...overlay.vacated], occupied: [...overlay.occupied] } : null, result: { match: false }, scan });
+    return null;
+  }
+
+  findBlockByPos(r, c) {
+    return this.blocks.find(b => b.r === r && b.c === c) || null;
+  }
+
+  consistencyCheck() {
+    // Verify grid <-> blocks agreement. Returns list of problems (empty = ok).
+    const problems = [];
+    const seen = new Map();
+    for (const b of this.blocks) {
+      const key = b.r + "," + b.c;
+      if (this.grid[b.r] === undefined || this.grid[b.r][b.c] === undefined) {
+        problems.push({ type: 'block_out_of_bounds', id: b.id, r: b.r, c: b.c });
+        continue;
+      }
+      if (this.grid[b.r][b.c] !== b.pattern) {
+        problems.push({ type: 'grid_mismatch', id: b.id, p: b.pattern, r: b.r, c: b.c, gridVal: this.grid[b.r][b.c] });
+      }
+      if (seen.has(key)) {
+        problems.push({ type: 'duplicate_cell', key, ids: [...seen.get(key), b.id] });
+      } else {
+        seen.set(key, [b.id]);
+      }
+    }
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const v = this.grid[r][c];
+        if (v !== 0 && !seen.has(r + "," + c)) {
+          problems.push({ type: 'orphan_grid_value', r, c, v });
+        }
+      }
+    }
+    return problems;
+  }
+
+  resolve(drag) {
+    const { group, dir, dist } = drag;
+    const d = GameCore.DIRS[dir];
+    const a = group[0];
+    const aR = a.r + d.dr * dist;
+    const aC = a.c + d.dc * dist;
+    dbg({ type: 'resolve', dir, dist, aStart: { r: a.r, c: a.c, p: a.pattern },
+          group: group.map(m => ({ id: m.id, p: m.pattern, r: m.r, c: m.c })),
+          aFinal: { r: aR, c: aC } });
+
+    const vacated = new Set();
+    const occupied = new Map();
+    const newPos = new Map(); // id -> {r,c}
+    for (const m of group) {
+      vacated.add(m.r + "," + m.c);
+      const nr = m.r + d.dr * dist;
+      const nc = m.c + d.dc * dist;
+      occupied.set(nr + "," + nc, this.grid[m.r][m.c]);
+      newPos.set(m.id, { r: nr, c: nc });
+    }
+
+    const hit = this.checkMatch(aR, aC, { vacated, occupied });
+    if (!hit) {
+      const issues = this.consistencyCheck();
+      dbg({ type: 'resolve', dir, dist, match: false, aFinal: { r: aR, c: aC }, consistency: issues });
+      return { match: false, removedIds: [], moved: [], target: null };
+    }
+
+    const target = { r: hit.r, c: hit.c };
+    const removedIds = [];
+
+    this.pushSnapshot(); // snapshot the pre-elimination board (A at origin, group in place)
+
+    const aBlock = this.findBlockByPos(a.r, a.c);
+    if (aBlock) { removedIds.push(aBlock.id); this.grid[aBlock.r][aBlock.c] = 0; }
+
+    // B is the block at the hit position: it may be a group member's new
+    // position (then its id is looked up at the ORIGINAL coords) or a
+    // regular grid block.
+    let bBlock = null;
+    for (const m of group) {
+      const np = newPos.get(m.id);
+      if (m.id !== (aBlock ? aBlock.id : -1) && np.r === hit.r && np.c === hit.c) {
+        bBlock = this.findBlockByPos(m.r, m.c);
+        break;
+      }
+    }
+    if (!bBlock) bBlock = this.findBlockByPos(hit.r, hit.c);
+    if (bBlock) { removedIds.push(bBlock.id); this.grid[bBlock.r][bBlock.c] = 0; }
+
+    this.blocks = this.blocks.filter(x => !removedIds.includes(x.id));
+    this.clearedPairs += 1;
+
+    const moved = [];
+    // Move surviving members atomically: first clear every member's original
+    // cell, then write each member's new cell. Iterating in place and
+    // clearing+wiring one member at a time lets a member that moves onto
+    // another member's original cell corrupt that cell before the second
+    // member is processed (findBlockByPos then matches the wrong block,
+    // leaving a ghost block whose grid cell is empty but whose entry remains
+    // in blocks). Clearing all original cells up front makes the writes
+    // collision-free regardless of order.
+    const survivors = [];
+    for (const m of group) {
+      if (removedIds.includes(m.id)) continue;
+      const block = this.findBlockByPos(m.r, m.c);
+      if (!block) continue;
+      survivors.push(block);
+      this.grid[block.r][block.c] = 0;
+    }
+    for (const block of survivors) {
+      const np = newPos.get(block.id);
+      if (!np) continue;
+      if (np.r === block.r && np.c === block.c) continue;
+      block.r = np.r; block.c = np.c;
+      this.grid[np.r][np.c] = block.pattern;
+      moved.push({ id: block.id, r: np.r, c: np.c });
+    }
+    const issues = this.consistencyCheck();
+    dbg({ type: 'resolve', dir, dist, match: true, aFinal: { r: aR, c: aC }, target,
+          removedIds, moved, consistency: issues });
+    return { match: true, removedIds, moved, target };
+  }
+
+  // Detect whether block A at (r,c) can match along BOTH a horizontal and a
+  // vertical ray. Returns { horizontal: {r,c,dir}, vertical: {r,c,dir} } when
+  // both directions have a same-pattern B, else null. Used to decide whether
+  // the multi-choice overlay (dark mask + highlighted B targets) is shown.
+  findMultiMatches(r, c, overlay = null) {
+    if (!this.inBounds(r, c)) return null;
+    const pat = (overlay && overlay.occupied.has(r + "," + c))
+      ? overlay.occupied.get(r + "," + c)
+      : this.grid[r][c];
+    if (pat === 0) return null;
+    const targets = [];
+    for (const dir of ['up', 'down', 'left', 'right']) {
+      const d = GameCore.DIRS[dir];
+      let cr = r + d.dr, cc = c + d.dc;
+      while (this.inBounds(cr, cc)) {
+        let v = 0;
+        if (overlay && overlay.occupied.has(cr + "," + cc)) {
+          v = overlay.occupied.get(cr + "," + cc);
+        } else if (overlay && overlay.vacated.has(cr + "," + cc)) {
+          v = 0;
+        } else {
+          v = this.grid[cr][cc];
+        }
+        if (v !== 0) {
+          if (v === pat) targets.push({ r: cr, c: cc, dir });
+          break;
+        }
+        cr += d.dr;
+        cc += d.dc;
+      }
+    }
+    // A multi-choice overlay is only needed when there are 2+ match targets.
+    if (targets.length < 2) return null;
+    return targets;
+  }
+
+  // Eliminate block A at (r,c) and the block at the given target (r,c) in
+  // place (no movement). Used when the player picks one of the highlighted B
+  // targets from the multi-choice overlay.
+  resolvePair(r, c, tr, tc) {
+    if (!this.inBounds(r, c) || this.grid[r][c] === 0) {
+      return { matched: false, removedIds: [] };
+    }
+    const aBlock = this.findBlockByPos(r, c);
+    const bBlock = this.findBlockByPos(tr, tc);
+    if (!aBlock || !bBlock || aBlock.pattern !== bBlock.pattern) {
+      return { matched: false, removedIds: [] };
+    }
+    const removedIds = [aBlock.id, bBlock.id];
+    this.grid[aBlock.r][aBlock.c] = 0;
+    this.grid[bBlock.r][bBlock.c] = 0;
+    this.blocks = this.blocks.filter(x => !removedIds.includes(x.id));
+    this.clearedPairs += 1;
+    const issues = this.consistencyCheck();
+    dbg({ type: 'resolvePair', r, c, tr, tc, removedIds, consistency: issues });
+    return { matched: true, removedIds, target: { r: tr, c: tc } };
+  }
+
+  // Move every member of a push group by `dist` cells in `dir`, updating both
+  // blocks and grid (no elimination). Used to commit a drag to its snapped
+  // position so the multi-choice overlay can resolve A in its real, final
+  // grid cell. Returns a list of { id, from:{r,c}, to:{r,c} } for the moved
+  // members so revertSlide can undo the move precisely.
+  applySlide(group, dir, dist) {
+    const d = GameCore.DIRS[dir];
+    const moved = [];
+    const orig = group.map(m => ({ id: m.id, r: m.r, c: m.c }));
+    for (const m of orig) this.grid[m.r][m.c] = 0;
+    for (const m of orig) {
+      const block = this.findBlockByPos(m.r, m.c);
+      if (!block) continue;
+      const nr = m.r + d.dr * dist, nc = m.c + d.dc * dist;
+      block.r = nr; block.c = nc;
+      this.grid[nr][nc] = block.pattern;
+      moved.push({ id: block.id, from: { r: m.r, c: m.c }, to: { r: nr, c: nc } });
+    }
+    return moved;
+  }
+
+  // Undo an applySlide: move each moved member back to its original cell.
+  revertSlide(moved) {
+    for (const item of moved) {
+      this.grid[item.to.r][item.to.c] = 0;
+      const block = this.findBlockByPos(item.to.r, item.to.c);
+      if (!block) continue;
+      block.r = item.from.r; block.c = item.from.c;
+      this.grid[item.from.r][item.from.c] = block.pattern;
+    }
+  }
+
+  clickResolve(r, c) {
+    // Tap-to-match: no drag. If the tapped block A satisfies a normal match
+    // condition (a same-pattern B is the first non-empty cell along one of
+    // the four rays, with only empty cells between), eliminate A and B.
+    if (!this.inBounds(r, c) || this.grid[r][c] === 0) {
+      return { matched: false, target: null, removedIds: [] };
+    }
+    const aBlock = this.findBlockByPos(r, c);
+    if (!aBlock) return { matched: false, target: null, removedIds: [] };
+    const hit = this.checkMatch(r, c);
+    if (!hit) {
+      dbg({ type: 'clickResolve', r, c, matched: false });
+      return { matched: false, target: null, removedIds: [] };
+    }
+    const bBlock = this.findBlockByPos(hit.r, hit.c);
+    const removedIds = [];
+    this.pushSnapshot(); // snapshot the pre-elimination board
+    if (aBlock) { removedIds.push(aBlock.id); this.grid[aBlock.r][aBlock.c] = 0; }
+    if (bBlock) { removedIds.push(bBlock.id); this.grid[bBlock.r][bBlock.c] = 0; }
+    this.blocks = this.blocks.filter(x => !removedIds.includes(x.id));
+    this.clearedPairs += 1;
+    const issues = this.consistencyCheck();
+    dbg({ type: 'clickResolve', r, c, matched: true, target: hit, removedIds, consistency: issues });
+    return { matched: true, target: hit, removedIds };
+  }
+
+  shuffle() {
+    if (this.blocks.length === 0) return false;
+    const remaining = this.blocks.map(b => b.pattern);
+    for (let attempt = 0; attempt < 10; attempt++) {
+      this._clearAll();
+      const cells = [];
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS; c++)
+          cells.push([r, c]);
+      this._shuffleArray(cells);
+      for (let i = 0; i < remaining.length; i++) {
+        const [r, c] = cells[i];
+        this.grid[r][c] = remaining[i];
+        this.blocks.push({ id: this.nextId++, pattern: remaining[i], r, c });
+      }
+      if (this.findHint()) return true;
+    }
+    return false;
+  }
+
+  _clearAll() {
+    this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    this.blocks = [];
+  }
+
+  // Record a deep snapshot of the current board state so a later undo() can
+  // restore it. Called immediately before a successful elimination. Only the
+  // most recent snapshot is kept (single-step undo), so a new elimination
+  // overwrites the previous snapshot.
+  pushSnapshot() {
+    this.undoSnapshot = {
+      grid: this.grid.map(row => row.slice()),
+      blocks: this.blocks.map(b => ({ id: b.id, pattern: b.pattern, r: b.r, c: b.c })),
+      clearedPairs: this.clearedPairs,
+      nextId: this.nextId,
+    };
+  }
+
+  // Undo the single most recent elimination, restoring the exact
+  // pre-elimination board (including any blocks that moved during a drag).
+  // After an undo there is nothing left to undo (single-step only). Returns
+  // true if a snapshot was restored, false if there is nothing to undo.
+  undo() {
+    const snap = this.undoSnapshot;
+    if (!snap) return false;
+    this.undoSnapshot = null;
+    this.grid = snap.grid.map(row => row.slice());
+    this.blocks = snap.blocks.map(b => ({ id: b.id, pattern: b.pattern, r: b.r, c: b.c }));
+    this.clearedPairs = snap.clearedPairs;
+    this.nextId = snap.nextId;
+    return true;
+  }
+
+  canUndo() { return !!this.undoSnapshot; }
+
+  simulateSlide(group, dir, dist, fn) {
+    const d = GameCore.DIRS[dir];
+    const saved = group.map(m => ({ r: m.r, c: m.c, pattern: this.grid[m.r][m.c] }));
+    const vacated = new Set();
+    const occupied = new Map();
+    for (const m of saved) {
+      vacated.add(m.r + "," + m.c);
+      occupied.set((m.r + d.dr * dist) + "," + (m.c + d.dc * dist), m.pattern);
+    }
+    for (const m of saved) this.grid[m.r][m.c] = 0;
+    for (const m of saved) this.grid[m.r + d.dr * dist][m.c + d.dc * dist] = m.pattern;
+    const a = group[0];
+    const ar = a.r + d.dr * dist, ac = a.c + d.dc * dist;
+    const result = fn(ar, ac, { vacated, occupied });
+    for (const m of saved) this.grid[m.r + d.dr * dist][m.c + d.dc * dist] = 0;
+    for (const m of saved) this.grid[m.r][m.c] = m.pattern;
+    return result;
+  }
+
+  findHint() {
+    this._probing = true;
+    try {
+    for (const block of this.blocks) {
+      for (const dir of Object.keys(GameCore.DIRS)) {
+        const group = this.getPushGroup(block.r, block.c, dir);
+        if (!group) continue;
+        const dist = this.getMaxSlideDistance(group, dir);
+        if (dist === 0) continue;
+        const target = this.simulateSlide(group, dir, dist, (ar, ac, overlay) => this.checkMatch(ar, ac, overlay));
+        if (target) return { blockId: block.id, dir, dist, target, group };
+      }
+    }
+    return null;
+    } finally {
+      this._probing = false;
+    }
+  }
+}
+
+// ================= SELF TEST =================
+const selfTests = {
+  core() {
+    const c = new GameCore();
+    const checks = [];
+    checks.push(c.getGrid().length === ROWS);
+    checks.push(c.getGrid().every(row => row.length === COLS));
+    checks.push(c.getPatternCount() === PATTERNS * BLOCKS_PER_PATTERN);
+    checks.push(c.getTotalPairs() === TOTAL_PAIRS);
+    let counts = new Array(PATTERNS + 1).fill(0);
+    for (const b of c.getBlocks()) counts[b.pattern]++;
+    checks.push(counts.slice(1).every(n => n === BLOCKS_PER_PATTERN));
+    let empty = 0;
+    for (let r = 0; r < ROWS; r++)
+      for (let col = 0; col < COLS; col++)
+        if (c.getGrid()[r][col] === 0) empty++;
+    checks.push(empty === COLS * ROWS - PATTERNS * BLOCKS_PER_PATTERN);
+    return checks;
+  },
+
+  group() {
+    const c = new GameCore();
+    const g = c.getGrid();
+    const checks = [];
+    const anyBlock = c.getBlocks()[0];
+    checks.push(c.getPushGroup(anyBlock.r, anyBlock.c, 'right') !== null);
+
+    const grp = c.getPushGroup(anyBlock.r, anyBlock.c, 'right');
+    if (grp) {
+      checks.push(grp.length >= 1);
+      checks.push(grp[0].id === anyBlock.id);
+      const d = GameCore.DIRS['right'];
+      for (let i = 1; i < grp.length; i++) {
+        checks.push(grp[i].r === grp[i - 1].r + d.dr);
+        checks.push(grp[i].c === grp[i - 1].c + d.dc);
+      }
+      const dist = c.getMaxSlideDistance(grp, 'right');
+      checks.push(dist >= 0);
+      const front = grp[grp.length - 1];
+      const next = { r: front.r + d.dr * (dist + 1), c: front.c + d.dc * (dist + 1) };
+      if (c.inBounds(next.r, next.c)) {
+        checks.push(g[next.r][next.c] !== 0);
+      } else {
+        checks.push(true); // boundary
+      }
+    }
+    return checks;
+  },
+
+  match() {
+    const c = new GameCore();
+    const checks = [];
+    // Scenario A: same-pattern block is the first block along a ray with
+    // empty cells between. Board: (0,0)=A pat1, (0,3)=B pat1, empty between.
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[0][0] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 0, c: 0 });
+    c.grid[0][3] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 0, c: 3 });
+    c.grid[2][0] = 2; c.blocks.push({ id: c.nextId++, pattern: 2, r: 2, c: 0 });
+
+    const hit = c.checkMatch(0, 0);
+    checks.push(hit !== null && hit.r === 0 && hit.c === 3);
+
+    // Scenario B: different pattern in the way blocks the match.
+    c.grid[0][1] = 3; c.blocks.push({ id: c.nextId++, pattern: 3, r: 0, c: 1 });
+    checks.push(c.checkMatch(0, 0) === null);
+
+    // Scenario C: resolve a real push. Board: A(4,0) pat1, B(4,4) pat1,
+    // empty (4,1..3). Walk right from (4,0) stops at empty (4,1), so the
+    // group is just A; front=A; empties (4,1..3)=3 => dist=3. A lands at
+    // (4,3), ray to the right hits B at (4,4) => match.
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[4][0] = 1; const aId = c.nextId++;
+    c.blocks.push({ id: aId, pattern: 1, r: 4, c: 0 });
+    c.grid[4][4] = 1; const bId = c.nextId++;
+    c.blocks.push({ id: bId, pattern: 1, r: 4, c: 4 });
+
+    const group = c.getPushGroup(4, 0, 'right');
+    const dist = c.getMaxSlideDistance(group, 'right');
+    // Walk from (4,0) stops at empty (4,1); front=A; empties (4,1..3)=3; dist=3.
+    checks.push(dist >= 3);
+    const res = c.resolve({ group, dir: 'right', dist });
+    checks.push(res.match === true);
+    checks.push(res.removedIds.includes(aId) && res.removedIds.includes(bId));
+    checks.push(res.target && res.target.r === 4 && res.target.c === 4);
+    checks.push(c.getClearedPairs() === 1);
+    checks.push(c.findBlockByPos(4, 4) === null);
+    checks.push(c.getGrid()[4][0] === 0);
+
+    // Scenario D: miss => no mutation at all (deterministic).
+    const c2 = new GameCore();
+    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c2.blocks = [];
+    c2.clearedPairs = 0;
+    c2.nextId = 1;
+    c2.grid[0][0] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 0, c: 0 });
+    const before = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks(), cp: c2.getClearedPairs() });
+    const grp = c2.getPushGroup(0, 0, 'up');
+    const dd = c2.getMaxSlideDistance(grp, 'up');
+    const res2 = c2.resolve({ group: grp, dir: 'up', dist: dd });
+    const after = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks(), cp: c2.getClearedPairs() });
+    checks.push(res2.match === false);
+    checks.push(before === after);
+    return checks;
+  },
+
+  shuffle() {
+    const c = new GameCore();
+    const checks = [];
+    const beforeCount = c.getPatternCount();
+    const beforeEmpty = COLS * ROWS - beforeCount;
+    const ok = c.shuffle();
+    checks.push(ok === true);
+    checks.push(c.getPatternCount() === beforeCount);
+    let empty = 0;
+    for (let r = 0; r < ROWS; r++)
+      for (let col = 0; col < COLS; col++)
+        if (c.getGrid()[r][col] === 0) empty++;
+    checks.push(empty === beforeEmpty);
+
+    const h = c.findHint();
+    checks.push(h !== null);
+    if (h) {
+      checks.push(typeof h.blockId === 'number' && typeof h.dir === 'string');
+      checks.push(h.dist > 0);
+      checks.push(h.target && typeof h.target.r === 'number' && typeof h.target.c === 'number');
+    }
+    return checks;
+  },
+
+  full() {
+    const checks = [];
+    const app = window.app;
+    checks.push(app instanceof App);
+    checks.push(app.core.getTotalPairs() === TOTAL_PAIRS);
+    const h = app.core.findHint();
+    checks.push(h !== null);
+    const beforeCount = app.core.getPatternCount();
+    const ok = app.core.shuffle();
+    checks.push(ok === true);
+    checks.push(app.core.getPatternCount() === beforeCount);
+    app.updateHud();
+    checks.push(document.getElementById('progressFill').style.width.endsWith('%'));
+    return checks;
+  },
+
+  ghost() {
+    // Regression: a multi-member group sliding by dist < group length must
+    // not leave ghost blocks (a block claiming a cell the grid says is empty).
+    // A(3,4)p1, M1(2,4)p2, M2(1,4)p2, B(2,7)p1, empty(2,5)(2,6).
+    // Drag A UP by dist=1: A->(2,4), M1->(1,4), M2->(0,4). A ray-right
+    // matches B at (2,7). A+B removed; M1,M2 survive and slide by 1.
+    const c = new GameCore();
+    const checks = [];
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[3][4] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 3, c: 4 }); // A
+    c.grid[2][4] = 2; c.blocks.push({ id: c.nextId++, pattern: 2, r: 2, c: 4 }); // M1
+    c.grid[1][4] = 3; c.blocks.push({ id: c.nextId++, pattern: 3, r: 1, c: 4 }); // M2
+    c.grid[2][7] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 2, c: 7 }); // B
+
+    const group = c.getPushGroup(3, 4, 'up');
+    const dist = c.getMaxSlideDistance(group, 'up');
+    const res = c.resolve({ group, dir: 'up', dist });
+
+    checks.push(dist === 1);
+    checks.push(res.match === true);
+    checks.push(res.removedIds.length === 2);
+    // Survivors M1,M2 must occupy (1,4) and (0,4).
+    const at = (r, cc) => c.blocks.find(b => b.r === r && b.c === cc) || null;
+    checks.push(at(1, 4) !== null && at(1, 4).pattern === 2); // M1
+    checks.push(at(0, 4) !== null && at(0, 4).pattern === 3); // M2
+    // No block may claim a grid cell that is empty (no ghosts).
+    let ghostCount = 0;
+    for (const b of c.blocks) {
+      if (c.grid[b.r][b.c] === 0) ghostCount++;
+      if (c.grid[b.r][b.c] !== b.pattern) ghostCount++;
+    }
+    checks.push(ghostCount === 0);
+    // Moved list must not contain the same block id twice.
+    const movedIds = res.moved.map(m => m.id);
+    checks.push(new Set(movedIds).size === movedIds.length);
+    return checks;
+  },
+
+  pointSlide() {
+    // Regression: a drag may stop at an INTERMEDIATE cell (not max distance)
+    // and match there. A(2,7)p5, M(2,6)p3, B(0,5)p5, empty(1,5).
+    // Drag A LEFT by 2 -> A lands (2,5), ray up hits (0,5) p5 -> match.
+    const c = new GameCore();
+    const checks = [];
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[2][7] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 2, c: 7 }); // A
+    c.grid[2][6] = 3; c.blocks.push({ id: c.nextId++, pattern: 3, r: 2, c: 6 }); // M
+    c.grid[0][5] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 0, c: 5 }); // B
+
+    const group = c.getPushGroup(2, 7, 'left');
+    const maxDist = c.getMaxSlideDistance(group, 'left');
+    // User stops at dist 2 (well below maxDist 6).
+    const res = c.resolve({ group, dir: 'left', dist: 2 });
+
+    checks.push(maxDist === 6);
+    checks.push(res.match === true);
+    checks.push(res.target && res.target.r === 0 && res.target.c === 5);
+    checks.push(res.removedIds.length === 2);
+    // Survivor M moved from (2,6) to (2,4).
+    const m = c.blocks.find(b => b.pattern === 3);
+    checks.push(!!m && m.r === 2 && m.c === 4);
+    // No ghosts.
+    let ghostCount = 0;
+    for (const b of c.blocks) {
+      if (c.grid[b.r][b.c] === 0) ghostCount++;
+      if (c.grid[b.r][b.c] !== b.pattern) ghostCount++;
+    }
+    checks.push(ghostCount === 0);
+    return checks;
+  },
+
+  clickResolve() {
+    // Feature: tapping a block (no drag) that satisfies a normal match
+    // condition (same pattern reachable along a clear ray) eliminates both
+    // blocks. A(2,7)p5, B(0,7)p5, empty(1,7) between -> click A matches B.
+    const c = new GameCore();
+    const checks = [];
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[2][7] = 5; const aId = c.nextId++;
+    c.blocks.push({ id: aId, pattern: 5, r: 2, c: 7 }); // A
+    c.grid[0][7] = 5; const bId = c.nextId++;
+    c.blocks.push({ id: bId, pattern: 5, r: 0, c: 7 }); // B (cross-gap match)
+
+    const res = c.clickResolve(2, 7);
+    checks.push(res.matched === true);
+    checks.push(res.target && res.target.r === 0 && res.target.c === 7);
+    checks.push(res.removedIds.includes(aId) && res.removedIds.includes(bId));
+    checks.push(c.getClearedPairs() === 1);
+    checks.push(c.findBlockByPos(2, 7) === null);
+    checks.push(c.findBlockByPos(0, 7) === null);
+    checks.push(c.getGrid()[2][7] === 0 && c.getGrid()[0][7] === 0);
+
+    // Blocked by an intervening different pattern -> no match, no mutation.
+    const c2 = new GameCore();
+    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c2.blocks = [];
+    c2.clearedPairs = 0;
+    c2.nextId = 1;
+    c2.grid[4][0] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 4, c: 0 });
+    c2.grid[4][2] = 3; c2.blocks.push({ id: c2.nextId++, pattern: 3, r: 4, c: 2 }); // blocker
+    c2.grid[4][4] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 4, c: 4 });
+    const before = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks(), cp: c2.getClearedPairs() });
+    const res2 = c2.clickResolve(4, 0);
+    const after = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks(), cp: c2.getClearedPairs() });
+    checks.push(res2.matched === false);
+    checks.push(before === after);
+    return checks;
+  },
+
+  multiPick() {
+    // Feature: a block that can match BOTH horizontally and vertically exposes
+    // a multi-choice. A(4,3)p4 can match right -> B1(4,6)p4 and down ->
+    // B2(6,3)p4. findMultiMatches must report both; resolvePair must eliminate
+    // A and the CHOSEN target in place (no movement).
+    const c = new GameCore();
+    const checks = [];
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[4][3] = 4; const aId = c.nextId++;
+    c.blocks.push({ id: aId, pattern: 4, r: 4, c: 3 }); // A
+    c.grid[4][6] = 4; const b1Id = c.nextId++;
+    c.blocks.push({ id: b1Id, pattern: 4, r: 4, c: 6 }); // B1 (right)
+    c.grid[6][3] = 4; const b2Id = c.nextId++;
+    c.blocks.push({ id: b2Id, pattern: 4, r: 6, c: 3 }); // B2 (down)
+
+    const multi = c.findMultiMatches(4, 3);
+    checks.push(multi !== null && Array.isArray(multi));
+    checks.push(multi.some(t => t.r === 4 && t.c === 6)); // right target
+    checks.push(multi.some(t => t.r === 6 && t.c === 3)); // down target
+
+    // resolvePair picks the vertical target -> removes A and B2, keeps B1.
+    const res = c.resolvePair(4, 3, 6, 3);
+    checks.push(res.matched === true);
+    checks.push(res.removedIds.includes(aId) && res.removedIds.includes(b2Id));
+    checks.push(!res.removedIds.includes(b1Id));
+    checks.push(c.getClearedPairs() === 1);
+    checks.push(c.findBlockByPos(4, 3) === null);
+    checks.push(c.findBlockByPos(6, 3) === null);
+    checks.push(c.findBlockByPos(4, 6) !== null); // B1 untouched
+    checks.push(c.consistencyCheck().length === 0);
+
+    // Only ONE matching direction -> no multi (returns null).
+    const c3 = new GameCore();
+    c3.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c3.blocks = [];
+    c3.clearedPairs = 0;
+    c3.nextId = 1;
+    c3.grid[2][2] = 5; c3.blocks.push({ id: c3.nextId++, pattern: 5, r: 2, c: 2 });
+    c3.grid[2][4] = 5; c3.blocks.push({ id: c3.nextId++, pattern: 5, r: 2, c: 4 }); // only horizontal
+    checks.push(c3.findMultiMatches(2, 2) === null);
+
+    // Empty cell / out of bounds -> null.
+    checks.push(c3.findMultiMatches(0, 0) === null);
+    return checks;
+  },
+
+  pickSlide() {
+    // Drag path: a single block slid to a position where it matches both ways
+    // commits via applySlide, then resolvePair works at the committed position,
+    // and revertSlide undoes it on cancel. A(3,2)p4 slides right 1 to (3,3)
+    // where it can match right -> B1(3,5)p4 and down -> B2(5,3)p4.
+    const c = new GameCore();
+    const checks = [];
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[3][2] = 4; const aId = c.nextId++;
+    c.blocks.push({ id: aId, pattern: 4, r: 3, c: 2 }); // A
+    c.grid[3][5] = 4; const b1Id = c.nextId++;
+    c.blocks.push({ id: b1Id, pattern: 4, r: 3, c: 5 }); // B1 right (gap 3,3 3,4)
+    c.grid[5][3] = 4; const b2Id = c.nextId++;
+    c.blocks.push({ id: b2Id, pattern: 4, r: 5, c: 3 }); // B2 down (gap 4,3)
+
+    const group = c.getPushGroup(3, 2, 'right');
+    const d = GameCore.DIRS['right'];
+    const aR = 3 + d.dr * 1, aC = 2 + d.dc * 1; // (3,3)
+    const vacated = new Set(), occupied = new Map();
+    for (const m of group) {
+      vacated.add(m.r + "," + m.c);
+      occupied.set((m.r + d.dr * 1) + "," + (m.c + d.dc * 1), c.grid[m.r][m.c]);
+    }
+    const multi = c.findMultiMatches(aR, aC, { vacated, occupied });
+    checks.push(multi !== null && Array.isArray(multi));
+    checks.push(multi.some(t => t.r === 3 && t.c === 5)); // right target
+    checks.push(multi.some(t => t.r === 5 && t.c === 3)); // down target
+
+    // Commit the slide: A now at (3,3).
+    c.applySlide(group, 'right', 1);
+    checks.push(c.findBlockByPos(3, 3) !== null && c.findBlockByPos(3, 3).pattern === 4);
+    checks.push(c.findBlockByPos(3, 2) === null);
+    checks.push(c.consistencyCheck().length === 0);
+
+    // Resolve A at (3,3) with the down target (5,3).
+    const res = c.resolvePair(3, 3, 5, 3);
+    checks.push(res.matched === true);
+    checks.push(res.removedIds.includes(aId) && res.removedIds.includes(b2Id));
+    checks.push(c.findBlockByPos(5, 3) === null);
+
+    // revertSlide: apply then revert leaves the board unchanged.
+    const c2 = new GameCore();
+    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c2.blocks = [];
+    c2.clearedPairs = 0;
+    c2.nextId = 1;
+    c2.grid[3][2] = 4; c2.blocks.push({ id: c2.nextId++, pattern: 4, r: 3, c: 2 });
+    c2.grid[3][5] = 4; c2.blocks.push({ id: c2.nextId++, pattern: 4, r: 3, c: 5 });
+    c2.grid[5][3] = 4; c2.blocks.push({ id: c2.nextId++, pattern: 4, r: 5, c: 3 });
+    const g2 = c2.getPushGroup(3, 2, 'right');
+    const before = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks().map(b=>[b.r,b.c,b.pattern]) });
+    const mv = c2.applySlide(g2, 'right', 1);
+    c2.revertSlide(mv);
+    const after = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks().map(b=>[b.r,b.c,b.pattern]) });
+    checks.push(before === after);
+    checks.push(c2.consistencyCheck().length === 0);
+    return checks;
+  },
+
+  undo() {
+    const checks = [];
+    // Single-step undo of a tap elimination. A(2,7)p5, B(0,7)p5, gap (1,7).
+    const c = new GameCore();
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    c.grid[2][7] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 2, c: 7 }); // A
+    c.grid[0][7] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 0, c: 7 }); // B
+    checks.push(c.canUndo() === false);               // nothing to undo yet
+
+    const res = c.clickResolve(2, 7);
+    checks.push(res.matched === true);
+    checks.push(c.getClearedPairs() === 1);
+    checks.push(c.getBlocks().length === 0);
+    checks.push(c.canUndo() === true);                 // one snapshot available
+
+    const undone = c.undo();
+    checks.push(undone === true);
+    checks.push(c.getClearedPairs() === 0);
+    checks.push(c.getBlocks().length === 2);
+    checks.push(c.findBlockByPos(2, 7) !== null && c.findBlockByPos(2, 7).pattern === 5);
+    checks.push(c.findBlockByPos(0, 7) !== null && c.findBlockByPos(0, 7).pattern === 5);
+    checks.push(c.consistencyCheck().length === 0);
+    checks.push(c.canUndo() === false);                // single-step: nothing left
+
+    // Undo with nothing to undo returns false.
+    checks.push(c.undo() === false);
+
+    // Drag elimination undo restores A's original position and the moved group.
+    const c2 = new GameCore();
+    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c2.blocks = [];
+    c2.clearedPairs = 0;
+    c2.nextId = 1;
+    c2.grid[3][4] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 3, c: 4 }); // A
+    c2.grid[2][4] = 2; c2.blocks.push({ id: c2.nextId++, pattern: 2, r: 2, c: 4 }); // M1
+    c2.grid[1][4] = 3; c2.blocks.push({ id: c2.nextId++, pattern: 3, r: 1, c: 4 }); // M2
+    c2.grid[2][7] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 2, c: 7 }); // B
+    const group = c2.getPushGroup(3, 4, 'up');
+    const dist = c2.getMaxSlideDistance(group, 'up');
+    const res2 = c2.resolve({ group, dir: 'up', dist });
+    checks.push(res2.match === true);
+    checks.push(c2.getClearedPairs() === 1);
+    // Undo restores A to (3,4), M1 to (2,4), M2 to (1,4), B to (2,7).
+    const ok2 = c2.undo();
+    checks.push(ok2 === true);
+    checks.push(c2.findBlockByPos(3, 4) !== null && c2.findBlockByPos(3, 4).pattern === 1);
+    checks.push(c2.findBlockByPos(2, 4) !== null && c2.findBlockByPos(2, 4).pattern === 2);
+    checks.push(c2.findBlockByPos(1, 4) !== null && c2.findBlockByPos(1, 4).pattern === 3);
+    checks.push(c2.findBlockByPos(2, 7) !== null && c2.findBlockByPos(2, 7).pattern === 1);
+    checks.push(c2.consistencyCheck().length === 0);
+    checks.push(c2.getClearedPairs() === 0);
+    return checks;
+  },
+};
+
+function runSelfTest(which = "all") {
+  const failures = [];
+  let count = 0;
+  const keys = which === "all" ? Object.keys(selfTests) : [which];
+  for (const key of keys) {
+    const fn = selfTests[key];
+    if (!fn) { failures.push(`unknown test group: ${key}`); continue; }
+    const results = fn();
+    for (const ok of results) {
+      count++;
+      if (!ok) failures.push(`${key}: assertion #${count} failed`);
+    }
+  }
+  return { pass: failures.length === 0, count, failures };
+}
+
+window.GameCore = GameCore;
+
+// ================= RENDER VIEW (Canvas 2D) =================
+const CELL = 64, GAP = 4;
+const BOARD_PX = COLS * CELL + (COLS - 1) * GAP;
+
+const PATTERN_COLORS = [
+  '#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22',
+];
+
+class RenderView {
+  static spriteFor(pattern) {
+    if (!RenderView._sprites) RenderView._sprites = {};
+    if (RenderView._sprites[pattern]) return RenderView._sprites[pattern];
+    const s = document.createElement('canvas');
+    s.width = CELL; s.height = CELL;
+    const ctx = s.getContext('2d');
+    const color = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
+    ctx.beginPath();
+    ctx.arc(CELL / 2, CELL / 2, CELL * 0.38, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.floor(CELL * 0.34)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(pattern), CELL / 2, CELL / 2 + 1);
+    RenderView._sprites[pattern] = s;
+    return s;
+  }
+
+  constructor(canvas, core) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.core = core;
+    this.dpr = window.devicePixelRatio || 1;
+    this.bg = null;
+    this.drag = null;   // { group, dir, offsetPx, maxDist }
+    this.revert = null; // { group, dir, offsetPx, fromPx }
+    this.elimFlash = null; // { t0, dur, pairs, removedIds }
+    this.hint = null;      // { blockId, dir, target }
+    this.pick = null;      // { r, c, targets: [{r,c,dir},...] } multi-choice overlay
+    this.bounce = null;    // { pattern, t0, dur } bounce animation for same-pattern blocks
+    this.onMatch = null;   // called on a successful drag elimination
+    this.onRevert = null;  // called when a drag ends without a match
+    this.hoverCell = null; // { r, c } under mouse (debug mode only)
+    this._animToken = 0;
+    this.resize();
+    this._buildBackground();
+    this.render();
+  }
+
+  resize() {
+    const dpr = this.dpr;
+    this.canvas.width = BOARD_PX * dpr;
+    this.canvas.height = BOARD_PX * dpr;
+    this.canvas.style.width = BOARD_PX + 'px';
+    this.canvas.style.height = BOARD_PX + 'px';
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  _buildBackground() {
+    const bg = document.createElement('canvas');
+    bg.width = BOARD_PX * this.dpr;
+    bg.height = BOARD_PX * this.dpr;
+    const ctx = bg.getContext('2d');
+    ctx.scale(this.dpr, this.dpr);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const x = c * (CELL + GAP), y = r * (CELL + GAP);
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+    }
+    this.bg = bg;
+  }
+
+  gridToPixel(r, c) {
+    return { x: c * (CELL + GAP), y: r * (CELL + GAP) };
+  }
+
+  pixelToGrid(x, y) {
+    const c = Math.floor(x / (CELL + GAP));
+    const r = Math.floor(y / (CELL + GAP));
+    return { r, c };
+  }
+
+  _groupOffsetPx() {
+    if (this.drag) return this.drag.offsetPx;
+    if (this.revert) return this.revert.offsetPx;
+    return 0;
+  }
+
+  _groupDir() {
+    if (this.drag) return this.drag.dir;
+    if (this.revert) return this.revert.dir;
+    return null;
+  }
+
+  render() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, BOARD_PX, BOARD_PX);
+    ctx.drawImage(this.bg, 0, 0, BOARD_PX, BOARD_PX);
+
+    // Drag axis highlight: while dragging, tint the row AND column of the
+    // leading block (A) with a light-white mask so the player can see which
+    // row/column is being attempted for a match. The mask follows the block's
+    // live position: for a horizontal slide the row stays fixed and the column
+    // tracks the block; for a vertical slide the column stays fixed and the
+    // row tracks the block.
+    const offsetPx = this._groupOffsetPx();
+    const dir = this._groupDir();
+    const moving = new Map();
+    if (this.drag || this.revert) {
+      const active = this.drag || this.revert;
+      const d = GameCore.DIRS[dir];
+      const px = d.dc * offsetPx;
+      const py = d.dr * offsetPx;
+      for (const m of active.group) {
+        moving.set(m.id, { x: m.c * (CELL + GAP) + px, y: m.r * (CELL + GAP) + py });
+      }
+      if (this.drag) {
+        // The cross mask ALWAYS centers on the dragged block, snapping to the
+        // nearest grid cell the block's center currently occupies. As the
+        // block slides into the next row/column, the mask's row/column snaps
+        // to that cell (discrete, not smooth pointer tracking).
+        const a = active.group[0];
+        const cellPx = CELL + GAP;
+        const dragDir = this.drag.dir;
+        const d = GameCore.DIRS[dragDir];
+        const offsetPx = this.drag.offsetPx;
+        const cx = a.c * cellPx + CELL / 2 + d.dc * offsetPx; // block center px
+        const cy = a.r * cellPx + CELL / 2 + d.dr * offsetPx;
+        const curR = Math.floor(cy / cellPx);
+        const curC = Math.floor(cx / cellPx);
+        ctx.fillStyle = 'rgba(255,255,255,0.28)';
+        ctx.fillRect(0, curR * cellPx, BOARD_PX, CELL);
+        ctx.fillRect(curC * cellPx, 0, CELL, BOARD_PX);
+      }
+    }
+
+    if (this.elimFlash) {
+      const t = Math.min(1, (performance.now() - this.elimFlash.t0) / this.elimFlash.dur);
+      ctx.strokeStyle = `rgba(255,213,79,${0.9 * (1 - t)})`;
+      ctx.lineWidth = 5;
+      for (const [ax, ay, bx, by] of this.elimFlash.pairs) {
+        ctx.beginPath();
+        ctx.moveTo(ax + CELL / 2, ay + CELL / 2);
+        ctx.lineTo(bx + CELL / 2, by + CELL / 2);
+        ctx.stroke();
+      }
+    }
+
+    // Pulse: same-pattern blocks gently scale in/out around their own center
+    // on a decaying sine wave (no positional bounce).
+    let pulseScale = 0;
+    let pulsePattern = null;
+    if (this.bounce) {
+      const t = Math.min(1, (performance.now() - this.bounce.t0) / this.bounce.dur);
+      if (t < 1) {
+        pulsePattern = this.bounce.pattern;
+        const amp = (1 - t) * 0.22;              // decaying scale amplitude
+        pulseScale = Math.sin(t * Math.PI) * amp; // >0 enlarge, <0 shrink
+      } else {
+        this.bounce = null;
+      }
+    }
+
+    for (const block of this.core.getBlocks()) {
+      const pos = moving.get(block.id);
+      const x = pos ? pos.x : block.c * (CELL + GAP);
+      const y = pos ? pos.y : block.r * (CELL + GAP);
+      if (pulsePattern !== null && block.pattern === pulsePattern) {
+        this.drawBlock(block, x, y, 1 + pulseScale);
+      } else {
+        this.drawBlock(block, x, y);
+      }
+    }
+
+    if (this.hint) {
+      const b = this.core.getBlocks().find(x => x.id === this.hint.blockId);
+      const target = this.hint.target;
+      if (b) {
+        ctx.strokeStyle = '#ffd54f';
+        ctx.lineWidth = 4;
+        const p = this.gridToPixel(b.r, b.c);
+        ctx.strokeRect(p.x + 2, p.y + 2, CELL - 4, CELL - 4);
+        const tp = this.gridToPixel(target.r, target.c);
+        ctx.beginPath();
+        ctx.moveTo(p.x + CELL / 2, p.y + CELL / 2);
+        ctx.lineTo(tp.x + CELL / 2, tp.y + CELL / 2);
+        ctx.stroke();
+      }
+    }
+
+    if (this.pick) {
+      // Dark translucent mask over the whole board; every selectable B target
+      // stays bright and is redrawn on top so they are not obscured.
+      ctx.fillStyle = 'rgba(0,0,0,0.62)';
+      ctx.fillRect(0, 0, BOARD_PX, BOARD_PX);
+      for (const t of this.pick.targets) {
+        if (!t) continue;
+        const p = this.gridToPixel(t.r, t.c);
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,255,255,0.9)';
+        ctx.shadowBlur = 14;
+        this.drawBlock(this.core.getBlocks().find(b => b.r === t.r && b.c === t.c) || { pattern: this.core.getGrid()[t.r][t.c], r: t.r, c: t.c }, p.x, p.y);
+        ctx.restore();
+        ctx.strokeStyle = '#ffd54f';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(p.x + 2, p.y + 2, CELL - 4, CELL - 4);
+      }
+    }
+
+    if (DEBUG_ENABLED) this._renderDebugOverlay();
+  }
+
+  _renderDebugOverlay() {
+    const ctx = this.ctx;
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const p = this.gridToPixel(r, c);
+        ctx.strokeRect(p.x + 1, p.y + 1, CELL - 2, CELL - 2);
+        const v = this.core.getGrid()[r][c];
+        ctx.fillText(v === 0 ? '·' : String(v), p.x + CELL / 2, p.y + CELL / 2);
+      }
+    }
+    if (this.hoverCell) {
+      const { r, c } = this.hoverCell;
+      const p = this.gridToPixel(r, c);
+      ctx.strokeStyle = '#ffd54f';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(p.x + 1, p.y + 1, CELL - 2, CELL - 2);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`(${r},${c})`, p.x + CELL / 2, p.y - 8);
+    }
+  }
+
+  drawBlock(block, x, y, scale = 1) {
+    if (scale === 1) {
+      this.ctx.drawImage(RenderView.spriteFor(block.pattern), x, y);
+      return;
+    }
+    // Scale around the block's own center.
+    const cx = x + CELL / 2, cy = y + CELL / 2;
+    const w = CELL * scale, h = CELL * scale;
+    this.ctx.drawImage(RenderView.spriteFor(block.pattern), cx - w / 2, cy - h / 2, w, h);
+  }
+
+  // Trigger a pulse (scale in/out around each block's center) for every block
+  // matching `pattern`. Used when the player taps a block and no match occurs,
+  // so all same-type blocks visibly react.
+  triggerBounce(pattern) {
+    this.bounce = { pattern, t0: performance.now(), dur: 450 };
+    this._animateUntil(450, () => this.render(), () => {
+      this.bounce = null;
+      this.render();
+    });
+  }
+
+  startDrag(group, dir, maxDist) {
+    this.drag = { group, dir, offsetPx: 0, maxDist };
+    this.revert = null;
+    this.elimFlash = null;
+    this._bumpToken();
+    this.render();
+  }
+
+  updateDrag(offsetPx) {
+    if (!this.drag) return;
+    const cellPx = CELL + GAP;
+    const maxPx = this.drag.maxDist * cellPx;
+    this.drag.offsetPx = Math.max(0, Math.min(maxPx, offsetPx));
+    this.render();
+  }
+
+  snapAndResolve(onDone) {
+    if (!this.drag) { onDone && onDone(); return; }
+    const cellPx = CELL + GAP;
+    // Support discrete-point sliding: snap to the cell the user released on
+    // (clamped to 1..maxDist), then resolve THAT distance. If it matches,
+    // eliminate; otherwise revert back to origin. The user can stop at an
+    // intermediate cell instead of always sliding to the max distance.
+    const rawDist = Math.round(this.drag.offsetPx / cellPx);
+    const dist = Math.min(this.drag.maxDist, rawDist);
+    // If the block did not reach the center of the next cell (rounded to 0),
+    // it should NOT snap to that cell first: revert straight back to origin.
+    if (dist === 0) {
+      const { group, dir } = this.drag;
+      const from = this.drag.offsetPx;
+      this.drag = null;
+      this.revert = { group, dir, offsetPx: from, fromPx: from };
+      this._animate(from, 0, 220, (v) => {
+        this.revert.offsetPx = v;
+        this.render();
+      }, () => {
+        this.revert = null;
+        this.render();
+        onDone && onDone();
+      });
+      return;
+    }
+    const to = dist * cellPx;
+    const from = this.drag.offsetPx;
+    this._animate(from, to, 120, (v) => {
+      this.drag.offsetPx = v;
+      this.render();
+    }, () => {
+      const { group, dir } = this.drag;
+      const d = GameCore.DIRS[dir];
+      const a = group[0];
+      const aR = a.r + d.dr * dist, aC = a.c + d.dc * dist;
+      dbgStep();
+      dbg({ type: 'snapResolve', dir, dist, maxDist: this.drag.maxDist, gridBefore: this.core.getGrid().map(r => r.join('')) });
+      // Before resolving, check whether A's final position can match BOTH
+      // horizontally and vertically. If so, surface the multi-choice overlay
+      // instead of resolving immediately.
+      const vacated = new Set();
+      const occupied = new Map();
+      for (const m of group) {
+        vacated.add(m.r + "," + m.c);
+        occupied.set((m.r + d.dr * dist) + "," + (m.c + d.dc * dist), this.core.getGrid()[m.r][m.c]);
+      }
+      const multi = this.core.findMultiMatches(aR, aC, { vacated, occupied });
+      if (multi) {
+        // Multi-choice: commit the slide so A really occupies its final cell,
+        // then surface the overlay. Picking a B target resolves A+B in place;
+        // cancelling reverts the slide back to the origin. Snapshot BEFORE the
+        // slide so an undo restores the dragged block to its ORIGINAL cell.
+        this.core.pushSnapshot();
+        const slideMoved = this.core.applySlide(group, dir, dist);
+        this.pick = {
+          r: aR, c: aC,
+          targets: multi,
+          slide: { group, dir, dist, moved: slideMoved },
+        };
+        this.drag = null;
+        dbg({ type: 'pickOpen', r: aR, c: aC, multi });
+        this.render();
+        if (onDone) onDone();
+        return;
+      }
+      this.drag = null;
+      const res = this.core.resolve({ group, dir, dist });
+      if (res.match) {
+        if (this.onMatch) this.onMatch();
+        const d = GameCore.DIRS[dir];
+        const a = group[0];
+        const ax = (a.c + d.dc * dist) * cellPx;
+        const ay = (a.r + d.dr * dist) * cellPx;
+        const tp = this.gridToPixel(res.target.r, res.target.c);
+        this.elimFlash = {
+          t0: performance.now(),
+          dur: 350,
+          pairs: [[ax, ay, tp.x, tp.y]],
+          removedIds: res.removedIds,
+        };
+        this._animateUntil(this.elimFlash.dur, () => this.render(), () => {
+          this.elimFlash = null;
+          this.render();
+          onDone && onDone();
+        });
+      } else {
+        if (this.onRevert) this.onRevert(); // drag ended with no match -> revert sound
+        this.revert = { group, dir, offsetPx: to, fromPx: to };
+        this._animate(to, 0, 220, (v) => {
+          this.revert.offsetPx = v;
+          this.render();
+        }, () => {
+          this.revert = null;
+          this.render();
+          onDone && onDone();
+        });
+      }
+    });
+  }
+
+  _animate(from, to, dur, tick, onDone) {
+    const token = ++this._animToken;
+    const t0 = performance.now();
+    const step = (now) => {
+      if (token !== this._animToken) return; // cancelled
+      const t = Math.min(1, (now - t0) / dur);
+      const e = 1 - (1 - t) * (1 - t); // ease-out
+      tick(from + (to - from) * e);
+      if (t < 1) {
+        requestAnimationFrame(step);
+      } else {
+        onDone && onDone();
+      }
+    };
+    requestAnimationFrame(step);
+  }
+
+  _animateUntil(dur, tick, onDone) {
+    const token = ++this._animToken;
+    const t0 = performance.now();
+    const step = (now) => {
+      if (token !== this._animToken) return;
+      const t = Math.min(1, (now - t0) / dur);
+      tick(t);
+      if (t < 1) requestAnimationFrame(step);
+      else onDone && onDone();
+    };
+    requestAnimationFrame(step);
+  }
+
+  _bumpToken() { this._animToken++; }
+}
+
+window.RenderView = RenderView;
+window.runSelfTest = runSelfTest;
+
+// ================= SOUND (Web Audio synth, no assets) =================
+// Generates short UI sound effects with oscillators/noise. All sounds are
+// synthesized so the single-file game needs no external audio assets.
+class SoundManager {
+  constructor() {
+    this.ctx = null;
+    this.enabled = true;
+    this._initOnFirstUse();
+  }
+
+  _initOnFirstUse() {
+    // AudioContext must be created/resumed after a user gesture in most
+    // browsers, so we lazily create it on the first sound call.
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) this.ctx = new AC();
+    } catch (e) { this.ctx = null; this.enabled = false; }
+  }
+
+  // A short tone helper.
+  _tone(freq, dur, type, vol, when = 0) {
+    if (!this.enabled || !this.ctx) return;
+    const t0 = this.ctx.currentTime + when;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }
+
+  click() {
+    this._initOnFirstUse();
+    this._tone(660, 0.06, 'triangle', 0.25);
+  }
+
+  dragStart() {
+    this._initOnFirstUse();
+    this._tone(440, 0.09, 'sine', 0.22);
+  }
+
+  release() {
+    this._initOnFirstUse();
+    this._tone(520, 0.07, 'triangle', 0.2);
+  }
+
+  match() {
+    this._initOnFirstUse();
+    // Two quick rising tones for a satisfying success chime.
+    this._tone(660, 0.1, 'sine', 0.3, 0);
+    this._tone(880, 0.12, 'sine', 0.3, 0.09);
+  }
+
+  pick() {
+    this._initOnFirstUse();
+    this._tone(700, 0.08, 'triangle', 0.25);
+  }
+}
+
+// ================= INPUT CONTROLLER + APP =================
+class App {
+  constructor() {
+    this.core = new GameCore();
+    this.canvas = document.getElementById('board');
+    this.view = new RenderView(this.canvas, this.core);
+    this._wireView(this.view);
+    this.busy = false;
+    this.press = null; // { r, c, startX, startY, dir, group, maxDist }
+    this.picking = null; // { r, c, horizontal: {r,c}, vertical: {r,c} } multi-choice active
+    this.sound = new SoundManager();
+    this._bindControls();
+    this._bindInput();
+    this.updateHud();
+  }
+
+  // Attach sound callbacks to a RenderView. Called when the view is created or
+  // rebuilt (restart) so drag-match and drag-revert sounds keep working.
+  _wireView(view) {
+    view.onMatch = () => { if (this.sound) this.sound.match(); };
+    view.onRevert = () => { if (this.sound) this.sound.release(); };
+  }
+
+  _bindControls() {
+    document.getElementById('btnShuffle').addEventListener('click', () => {
+      if (this.busy || this.core.getPatternCount() === 0) return;
+      this.busy = true;
+      dbgStep();
+      dbg({ type: 'shuffle', gridBefore: this.core.getGrid().map(r => r.join('')) });
+      this.core.shuffle();
+      this.view.hint = null;
+      this.view.drag = null;
+      this.view.render();
+      this.updateHud();
+      this.busy = false;
+    });
+    document.getElementById('btnHint').addEventListener('click', () => {
+      if (this.busy) return;
+      const h = this.core.findHint();
+      if (h) {
+        this.view.hint = h;
+        this.view.render();
+        this.setMsg('提示：推动该方块即可消除');
+      } else {
+        this.view.hint = null;
+        this.view.render();
+        this.setMsg('当前无解，可尝试洗牌');
+      }
+    });
+    document.getElementById('btnUndo').addEventListener('click', () => {
+      if (this.busy) return;
+      this.undo();
+    });
+    document.getElementById('btnRestart').addEventListener('click', () => this.restart());
+    document.getElementById('winRestart').addEventListener('click', () => this.restart());
+  }
+
+  _bindInput() {
+    const DRAG_THRESHOLD = 6; // px before the axis direction is locked
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (DEBUG_ENABLED && !this.busy && !this.press) {
+        const pos = this._eventPos(e);
+        const { r, c } = this.view.pixelToGrid(pos.x, pos.y);
+        if (this.core.inBounds(r, c)) {
+          this.view.hoverCell = { r, c };
+          this.view.render();
+        }
+      }
+    });
+    this.canvas.addEventListener('pointerleave', () => {
+      if (this.view.hoverCell) {
+        this.view.hoverCell = null;
+        this.view.render();
+      }
+    });
+    this.canvas.addEventListener('pointerdown', (e) => {
+      if (this.busy) return;
+      this.busy = true;
+      this.canvas.setPointerCapture(e.pointerId);
+      const pos = this._eventPos(e);
+      const { r, c } = this.view.pixelToGrid(pos.x, pos.y);
+      this.view.hint = null;
+      dbg({ type: 'pointerdown', r, c, gridVal: this.core.inBounds(r, c) ? this.core.getGrid()[r][c] : -1 });
+      if (this.picking) {
+        // Multi-choice overlay is active: clicking one of the highlighted B
+        // targets resolves that pair; clicking anything else cancels.
+        this.busy = false;
+        const t = (this.picking.targets || []).find(x => x.r === r && x.c === c) || null;
+        if (t) {
+          this._doPick(this.picking.r, this.picking.c, t.r, t.c);
+        } else {
+          this._cancelPick();
+        }
+        return;
+      }
+      if (!this.core.inBounds(r, c) || this.core.getGrid()[r][c] === 0) {
+        this.press = null;
+        return; // busy stays true until pointerup releases it
+      }
+      // No sound on pointerdown: it is played on release only if no match
+      // occurred (see endDrag). The same-pattern hop is also on-release-only.
+      this.press = { r, c, startX: pos.x, startY: pos.y, axis: null, dir: null, group: null, maxDist: 0 };
+    });
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (!this.press || !this.busy) return;
+      const pos = this._eventPos(e);
+      const dx = pos.x - this.press.startX;
+      const dy = pos.y - this.press.startY;
+
+      if (!this.press.axis) {
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+        const isH = Math.abs(dx) >= Math.abs(dy);
+        const dir = isH ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        const group = this.core.getPushGroup(this.press.r, this.press.c, dir);
+        if (!group) return;
+        const maxDist = this.core.getMaxSlideDistance(group, dir);
+        if (maxDist === 0) return; // blocked at origin, no slide possible
+        this.press.axis = isH ? 'h' : 'v';
+        this.press.dir = dir;
+        this.press.group = group;
+        this.press.maxDist = maxDist;
+        dbgStep();
+        dbg({ type: 'dragStart', from: { r: this.press.r, c: this.press.c }, dir, maxDist,
+              group: group.map(m => ({ id: m.id, p: m.pattern, r: m.r, c: m.c })) });
+        this.view.startDrag(group, dir, maxDist);
+      }
+
+      // Bidirectional slide within the locked axis; the group stays fixed.
+      const curDir = this.press.axis === 'h' ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
+      const pxDist = this.press.axis === 'h' ? Math.abs(dx) : Math.abs(dy);
+      const maxDist = this.core.getMaxSlideDistance(this.press.group, curDir);
+      if (curDir !== this.press.dir) {
+        this.press.dir = curDir;
+        this.press.maxDist = maxDist;
+        if (this.view.drag) { this.view.drag.dir = curDir; this.view.drag.maxDist = maxDist; }
+      }
+      this.view.updateDrag(Math.min(pxDist, maxDist * (CELL + GAP)));
+    });
+    const endDrag = () => {
+      if (!this.busy) return;
+      const hadDrag = this.press && this.press.dir !== null;
+      const clickRc = this.press ? { r: this.press.r, c: this.press.c } : null;
+      this.press = null;
+      if (!hadDrag) {
+        // Short tap with no drag: if the tapped block can match both
+        // horizontally and vertically, show the multi-choice overlay instead
+        // of resolving; otherwise attempt tap-to-match elimination.
+        if (clickRc) {
+          dbgStep();
+          const multi = this.core.findMultiMatches(clickRc.r, clickRc.c);
+          if (multi) {
+            this.core.pushSnapshot(); // snapshot before the pick so undo restores A to origin
+            this.picking = { r: clickRc.r, c: clickRc.c, targets: multi };
+            this.view.pick = this.picking;
+            this.view.render();
+            this.busy = false;
+            dbg({ type: 'pickOpen', r: clickRc.r, c: clickRc.c, multi });
+            return;
+          }
+          const res = this.core.clickResolve(clickRc.r, clickRc.c);
+          if (res.matched) {
+            this.sound.match();
+            const cellPx = CELL + GAP;
+            const ax = clickRc.c * cellPx;
+            const ay = clickRc.r * cellPx;
+            const tp = this.view.gridToPixel(res.target.r, res.target.c);
+            this.view.elimFlash = {
+              t0: performance.now(),
+              dur: 350,
+              pairs: [[ax + CELL / 2, ay + CELL / 2, tp.x + CELL / 2, tp.y + CELL / 2]],
+              removedIds: res.removedIds,
+            };
+            this.view.render();
+            this.view._animateUntil(350, () => this.view.render(), () => {
+              this.view.elimFlash = null;
+              this.view.render();
+              this._finishAction();
+            });
+          } else {
+            // No match on tap (released without matching): play the click
+            // sound and show the same-pattern pulse as feedback.
+            this.sound.click();
+            const tappedPattern = this.core.inBounds(clickRc.r, clickRc.c) ? this.core.getGrid()[clickRc.r][clickRc.c] : 0;
+            if (tappedPattern !== 0) this.view.triggerBounce(tappedPattern);
+            this._finishAction();
+          }
+        } else {
+          this.busy = false;
+        }
+        return;
+      }
+      dbg({ type: 'pointerup', hadDrag: true });
+      this.view.snapAndResolve(() => {
+        // If the drag surfaced a multi-choice overlay (view.pick was set),
+        // sync the App picking state so subsequent taps are intercepted.
+        if (this.view.pick) {
+          this.picking = this.view.pick;
+          this.busy = false;
+          dbg({ type: 'resolveDone', picking: true });
+          return;
+        }
+        dbg({ type: 'resolveDone', gridRows: this.core.getGrid().map(r => r.join('')) });
+        this.busy = false;
+        this.updateHud();
+        this.checkWin();
+      });
+    };
+    this.canvas.addEventListener('pointerup', endDrag);
+    this.canvas.addEventListener('pointercancel', endDrag);
+  }
+
+  _eventPos(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  updateHud() {
+    const c = this.core.getClearedPairs();
+    const t = this.core.getTotalPairs();
+    document.getElementById('progressLabel').textContent = `进度 ${c}/${t}`;
+    document.getElementById('progressFill').style.width = (this.core.getProgress() * 100).toFixed(1) + '%';
+  }
+
+  setMsg(text) { document.getElementById('msg').textContent = text; }
+
+  _doPick(r, c, tr, tc) {
+    const res = this.core.resolvePair(r, c, tr, tc);
+    this.picking = null;
+    this.view.pick = null;
+    if (res.matched) {
+      this.sound.match();
+      const cellPx = CELL + GAP;
+      const ax = c * cellPx, ay = r * cellPx;
+      const tp = this.view.gridToPixel(tr, tc);
+      this.view.elimFlash = {
+        t0: performance.now(),
+        dur: 350,
+        pairs: [[ax + CELL / 2, ay + CELL / 2, tp.x + CELL / 2, tp.y + CELL / 2]],
+        removedIds: res.removedIds,
+      };
+      this.view.render();
+      this.view._animateUntil(350, () => this.view.render(), () => {
+        this.view.elimFlash = null;
+        this.view.render();
+        this._finishAction();
+      });
+    } else {
+      this.busy = false;
+    }
+    dbg({ type: 'pickResolve', r, c, tr, tc, matched: res.matched });
+  }
+
+  _cancelPick() {
+    // If the overlay was opened by a drag, revert the committed slide back to
+    // the origin before clearing the overlay.
+    if (this.picking && this.picking.slide) {
+      this.core.revertSlide(this.picking.slide.moved);
+    }
+    this.picking = null;
+    this.view.pick = null;
+    this.view.render();
+    this.busy = false;
+    dbg({ type: 'pickCancel' });
+  }
+
+  _finishAction() {
+    this.busy = false;
+    this.updateHud();
+    this.checkWin();
+  }
+
+  checkWin() {
+    if (this.core.getPatternCount() === 0) {
+      document.getElementById('winOverlay').classList.remove('hidden');
+    }
+  }
+
+  undo() {
+    if (!this.core.canUndo()) {
+      this.setMsg('没有可撤销的操作');
+      return;
+    }
+    dbg({ type: 'undo' });
+    this.core.undo();
+    // Reset any transient view/input state and repaint from the restored board.
+    if (this.view) this.view._bumpToken();
+    this.view.drag = null;
+    this.view.revert = null;
+    this.view.elimFlash = null;
+    this.view.bounce = null;
+    this.view.pick = null;
+    this.view.hint = null;
+    this.picking = null;
+    this.press = null;
+    document.getElementById('winOverlay').classList.add('hidden');
+    this.view.render();
+    this.busy = false;
+    this.updateHud();
+    this.setMsg('已撤销上一步');
+  }
+
+  restart() {
+    dbg({ type: 'restart' });
+    document.getElementById('winOverlay').classList.add('hidden');
+    if (this.view) this.view._bumpToken(); // cancel any running animation
+    this.busy = false;
+    this.press = null;
+    this.picking = null;
+    this.core.init();
+    this.view = new RenderView(this.canvas, this.core);
+    this._wireView(this.view);
+    this.setMsg('');
+    this.updateHud();
+  }
+}
+
+window.App = App;
+
+// ================= START =================
+window.app = new App();
+</script>
+</body>
+</html>
