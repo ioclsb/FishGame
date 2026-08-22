@@ -1308,38 +1308,51 @@ function creatureSvg(pattern) {
   const grad = (id, c1, c2, x2 = 0, y2 = 1) =>
     `<linearGradient id="${pre}${id}" x1="0" y1="0" x2="${x2}" y2="${y2}"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient>`;
   const OUT = 'rgba(15,30,48,0.55)';
+  const shadowDef = `<filter id="${pre}sh" x="-25%" y="-25%" width="150%" height="150%">` +
+    `<feDropShadow dx="0" dy="2.5" stdDeviation="2.5" flood-color="#04101e" flood-opacity="0.45"/></filter>`;
+  const wrap = (inner) =>
+    `<defs>${shadowDef}</defs><g filter="url(#${pre}sh)">${inner}</g>`;
   switch (pattern) {
     case 1: { // 小丑鱼 clownfish, swims left
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>
         ${grad('b', '#ffb066', '#f4772e')}
-        ${grad('t', '#ffd9a8', '#ff9a4d')}</defs>
+        ${grad('t', '#ffd9a8', '#ff9a4d')}
+        <clipPath id="${pre}cp"><ellipse cx="47" cy="51" rx="28" ry="18"/></clipPath></defs>
+        ${wrap(`
         <path d="M70 46 L93 30 Q86 49 93 69 L70 53 Z" fill="url(#${pre}t)" stroke="${OUT}" stroke-width="2"/>
         <path d="M40 34 Q54 22 66 31 L60 41 Z" fill="url(#${pre}t)" stroke="${OUT}" stroke-width="2"/>
         <ellipse cx="47" cy="51" rx="28" ry="18" fill="url(#${pre}b)" stroke="${OUT}" stroke-width="2.4"/>
-        <path d="M33 35 Q39 32 43 35 L41 67 Q37 69 33 66 Z" fill="#fff" opacity="0.92"/>
-        <path d="M55 34 Q60 33 63 36 L62 66 Q58 68 54 66 Z" fill="#fff" opacity="0.92"/>
+        <g clip-path="url(#${pre}cp)">
+          <path d="M33 33 Q39 30 43 33 L41 69 Q37 71 33 68 Z" fill="#fff" opacity="0.92"/>
+          <path d="M55 32 Q60 31 63 34 L62 68 Q58 70 54 68 Z" fill="#fff" opacity="0.92"/>
+        </g>
         <circle cx="28" cy="45" r="5.2" fill="#fff"/><circle cx="27" cy="46" r="2.6" fill="#20242c"/>
         <circle cx="28.2" cy="44" r="1.2" fill="#fff"/>
-        <path d="M20 55 Q24 59 29 58" fill="none" stroke="${OUT}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M20 55 Q24 59 29 58" fill="none" stroke="${OUT}" stroke-width="2" stroke-linecap="round"/>`)}
         </svg>`;
     }
     case 2: { // 蓝倒吊 blue tang
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>
         ${grad('b', '#5f9dff', '#2456c9')}
-        ${grad('y', '#ffe066', '#ffc21e')}</defs>
+        ${grad('y', '#ffe066', '#ffc21e')}
+        <clipPath id="${pre}cp"><ellipse cx="48" cy="52" rx="27" ry="18"/></clipPath></defs>
+        ${wrap(`
         <path d="M68 48 L92 32 Q87 50 92 68 L68 52 Z" fill="url(#${pre}y)" stroke="${OUT}" stroke-width="2"/>
         <path d="M36 36 Q52 22 68 33 L64 42 Z" fill="#1d3f8f"/>
         <ellipse cx="48" cy="52" rx="27" ry="18" fill="url(#${pre}b)" stroke="${OUT}" stroke-width="2.4"/>
-        <path d="M34 40 Q52 34 70 42 Q56 44 36 46 Z" fill="#101c3a" opacity="0.85"/>
+        <g clip-path="url(#${pre}cp)">
+          <path d="M30 38 Q52 32 74 42 Q56 46 30 48 Z" fill="#101c3a" opacity="0.85"/>
+        </g>
         <path d="M40 62 Q52 66 62 61" fill="none" stroke="#16307a" stroke-width="3" stroke-linecap="round"/>
         <circle cx="29" cy="47" r="5.4" fill="#fff"/><circle cx="28" cy="48" r="2.7" fill="#141a26"/>
-        <circle cx="29.2" cy="46" r="1.3" fill="#fff"/>
+        <circle cx="29.2" cy="46" r="1.3" fill="#fff"/>`)}
         </svg>`;
     }
     case 3: { // 绿海龟 sea turtle, top-down
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>
         ${grad('s', '#57d68d', '#1f9653')}
         ${grad('h', '#8ce7ae', '#4cbf7d')}</defs>
+        ${wrap(`
         <ellipse cx="24" cy="34" rx="12" ry="7" transform="rotate(-38 24 34)" fill="url(#${pre}h)" stroke="${OUT}" stroke-width="2"/>
         <ellipse cx="76" cy="34" rx="12" ry="7" transform="rotate(38 76 34)" fill="url(#${pre}h)" stroke="${OUT}" stroke-width="2"/>
         <ellipse cx="26" cy="66" rx="12" ry="7" transform="rotate(30 26 66)" fill="url(#${pre}h)" stroke="${OUT}" stroke-width="2"/>
@@ -1348,7 +1361,7 @@ function creatureSvg(pattern) {
         <circle cx="50" cy="47" r="30" fill="url(#${pre}s)" stroke="${OUT}" stroke-width="2.4"/>
         <path d="M50 24 L66 36 L60 56 L40 56 L34 36 Z M50 24 L50 56 M34 36 L40 56 M66 36 L60 56"
               fill="none" stroke="#157a42" stroke-width="2.6" stroke-linejoin="round"/>
-        <circle cx="50" cy="47" r="30" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="3"/>
+        <circle cx="50" cy="47" r="28" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="3"/>`)}
         </svg>`;
     }
     case 4: { // 河豚 pufferfish
@@ -1361,13 +1374,13 @@ function creatureSvg(pattern) {
       }
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>
         ${grad('b', '#ffe27a', '#f7b62b')}</defs>
-        ${spikes}
+        ${wrap(`${spikes}
         <circle cx="50" cy="52" r="24" fill="url(#${pre}b)" stroke="${OUT}" stroke-width="2.4"/>
         <ellipse cx="50" cy="63" rx="15" ry="9" fill="#fff3c9" opacity="0.85"/>
         <path d="M28 44 Q18 40 16 32 Q26 33 31 39 Z" fill="#f7b62b" stroke="${OUT}" stroke-width="2"/>
         <circle cx="41" cy="47" r="6" fill="#fff"/><circle cx="42" cy="48" r="3" fill="#20242c"/><circle cx="43" cy="46" r="1.2" fill="#fff"/>
         <circle cx="61" cy="47" r="6" fill="#fff"/><circle cx="60" cy="48" r="3" fill="#20242c"/><circle cx="61" cy="46" r="1.2" fill="#fff"/>
-        <path d="M46 59 Q51 63 56 59" fill="none" stroke="${OUT}" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M46 59 Q51 63 56 59" fill="none" stroke="${OUT}" stroke-width="2.2" stroke-linecap="round"/>`)}
         </svg>`;
     }
     case 5: { // 紫水母 jellyfish
@@ -1381,10 +1394,10 @@ function creatureSvg(pattern) {
         ${grad('d', '#cf9bff', '#8a4be0')}
         <radialGradient id="${pre}gl" cx="0.35" cy="0.3" r="0.9">
           <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/><stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/></radialGradient></defs>
-        ${tents}
+        ${wrap(`${tents}
         <path d="M20 55 A30 30 0 0 1 80 55 Q70 61 60 56 Q50 61 40 56 Q30 61 20 55 Z" fill="url(#${pre}d)" stroke="${OUT}" stroke-width="2.4"/>
         <ellipse cx="42" cy="40" rx="16" ry="10" fill="url(#${pre}gl)"/>
-        <circle cx="40" cy="47" r="3.2" fill="#fff"/><circle cx="60" cy="47" r="3.2" fill="#fff"/>
+        <circle cx="40" cy="47" r="3.2" fill="#fff"/><circle cx="60" cy="47" r="3.2" fill="#fff"/>`)}
         </svg>`;
     }
     case 6: { // 小红蟹 crab
@@ -1393,7 +1406,7 @@ function creatureSvg(pattern) {
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>
         ${grad('b', '#ff8a70', '#e83a28')}
         ${grad('c', '#ffa38c', '#f04b38')}</defs>
-        ${leg(34, 1)}${leg(66, -1)}
+        ${wrap(`${leg(34, 1)}${leg(66, -1)}
         <path d="M30 44 Q18 34 20 24" fill="none" stroke="#e8503a" stroke-width="6" stroke-linecap="round"/>
         <path d="M70 44 Q82 34 80 24" fill="none" stroke="#e8503a" stroke-width="6" stroke-linecap="round"/>
         <circle cx="20" cy="20" r="9" fill="url(#${pre}c)" stroke="${OUT}" stroke-width="2"/>
@@ -1404,7 +1417,7 @@ function creatureSvg(pattern) {
         <path d="M36 40 L38 30 M64 40 L62 30" stroke="${OUT}" stroke-width="2.6" stroke-linecap="round"/>
         <circle cx="38" cy="28" r="4.6" fill="#fff"/><circle cx="38" cy="28" r="2.3" fill="#20242c"/>
         <circle cx="62" cy="28" r="4.6" fill="#fff"/><circle cx="62" cy="28" r="2.3" fill="#20242c"/>
-        <path d="M42 62 Q50 68 58 62" fill="none" stroke="${OUT}" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M42 62 Q50 68 58 62" fill="none" stroke="${OUT}" stroke-width="2.4" stroke-linecap="round"/>`)}
         </svg>`;
     }
   }
@@ -1536,6 +1549,7 @@ class RenderView {
     this.rings = [];       // shockwave rings
     this.bubbles = null;   // ambient drifting bubbles (lazy init)
     this._lastT = performance.now();
+    this.spawnT0 = performance.now(); // board entrance stagger origin
     this._animToken = 0;
     this.resize();
     this._buildBackground();
@@ -1804,6 +1818,17 @@ class RenderView {
         ctx.lineTo(bx + G.cell / 2, by + G.cell / 2);
         ctx.stroke();
       }
+      // shrinking ghost of each removed tile sells the "pop"
+      if (this.elimFlash.ghosts && this.elimFlash.pattern) {
+        const spr = RenderView.spriteFor(this.elimFlash.pattern);
+        const gs = 1 + 0.35 * t;
+        ctx.globalAlpha = 0.95 * (1 - t);
+        const w = G.cell * gs;
+        for (const g of this.elimFlash.ghosts) {
+          ctx.drawImage(spr, g.x + G.cell / 2 - w / 2, g.y + G.cell / 2 - w / 2, w, w);
+        }
+        ctx.globalAlpha = 1;
+      }
     }
 
     // Pulse: same-pattern blocks gently scale in/out around their own center
@@ -1821,23 +1846,37 @@ class RenderView {
       }
     }
 
-    for (const block of this.core.getBlocks()) {
+    const blocks = this.core.getBlocks();
+    for (let idx = 0; idx < blocks.length; idx++) {
+      const block = blocks[idx];
       const pos = moving.get(block.id);
       const x = pos ? pos.x : block.c * G.pitch;
       const y = pos ? pos.y : block.r * G.pitch;
-      if (pulsePattern !== null && block.pattern === pulsePattern) {
-        this.drawBlock(block, x, y, 1 + pulseScale);
-      } else {
-        this.drawBlock(block, x, y);
+      let scale = 1;
+      if (pulsePattern !== null && block.pattern === pulsePattern) scale += pulseScale;
+      // entrance pop on a fresh board (staggered by board order)
+      if (!REDUCED_MOTION) {
+        const lt = (now - this.spawnT0 - Math.min(idx * 9, 420)) / 240;
+        if (lt < 0) scale *= 0.0001;
+        else if (lt < 1) {
+          const c1 = 1.70158, c3 = c1 + 1, u = lt - 1;
+          scale *= 1 + c3 * u * u * u + c1 * u * u; // ease-out-back
+        }
       }
+      this.drawBlock(block, x, y, scale);
     }
 
     if (this.hint) {
       const b = this.core.getBlocks().find(x => x.id === this.hint.blockId);
       const target = this.hint.target;
       if (b) {
+        const pulse = 0.65 + 0.35 * Math.sin(now * 0.006);
+        ctx.save();
+        ctx.globalAlpha = pulse;
         ctx.strokeStyle = '#ffd54f';
         ctx.lineWidth = 4;
+        ctx.setLineDash([9, 7]);
+        ctx.lineDashOffset = -(now * 0.03) % 16;
         const p = this.gridToPixel(b.r, b.c);
         ctx.strokeRect(p.x + 2, p.y + 2, G.cell - 4, G.cell - 4);
         const tp = this.gridToPixel(target.r, target.c);
@@ -1845,6 +1884,8 @@ class RenderView {
         ctx.moveTo(p.x + G.cell / 2, p.y + G.cell / 2);
         ctx.lineTo(tp.x + G.cell / 2, tp.y + G.cell / 2);
         ctx.stroke();
+        ctx.strokeRect(tp.x + 2, tp.y + 2, G.cell - 4, G.cell - 4);
+        ctx.restore();
       }
     }
 
@@ -1852,20 +1893,31 @@ class RenderView {
       // Dark translucent mask over the whole board; every selectable B target
       // stays bright and is redrawn on top so they are not obscured.
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
-      ctx.fillRect(0, 0, G.size, G.size);      for (const t of this.pick.targets) {
+      ctx.fillRect(0, 0, G.size, G.size);
+      // pulsing ring around the dragged block A
+      const pa = this.gridToPixel(this.pick.r, this.pick.c);
+      const ringR = G.cell * (0.55 + 0.05 * Math.sin(now * 0.008));
+      ctx.beginPath();
+      ctx.arc(pa.x + G.cell / 2, pa.y + G.cell / 2, ringR, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,213,79,0.9)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      let ti = 0;
+      for (const t of this.pick.targets) {
         if (!t) continue;
+        ti++;
         const p = this.gridToPixel(t.r, t.c);
+        const ts = 1 + (REDUCED_MOTION ? 0 : 0.06 * Math.sin(now * 0.008 + ti * 0.9));
         ctx.save();
         ctx.shadowColor = 'rgba(255,255,255,0.9)';
         ctx.shadowBlur = 14;
-        this.drawBlock(this.core.getBlocks().find(b => b.r === t.r && b.c === t.c) || { pattern: this.core.getGrid()[t.r][t.c], r: t.r, c: t.c }, p.x, p.y);
+        this.drawBlock(this.core.getBlocks().find(b => b.r === t.r && b.c === t.c) || { pattern: this.core.getGrid()[t.r][t.c], r: t.r, c: t.c }, p.x, p.y, ts);
         ctx.restore();
         ctx.strokeStyle = '#ffd54f';
         ctx.lineWidth = 4;
         ctx.strokeRect(p.x + 2, p.y + 2, G.cell - 4, G.cell - 4);
       }
     }
-
     // shockwave rings + particles on top of everything
     for (const g of this.rings) {
       const t = g.t / g.dur;
@@ -2074,6 +2126,8 @@ class RenderView {
           dur: 350,
           pairs: [[ax, ay, tp.x, tp.y]],
           removedIds: res.removedIds,
+          ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
+          pattern: group[0].pattern,
         };
         this._animateUntil(this.elimFlash.dur, () => this.render(), () => {
           this.elimFlash = null;
@@ -2517,6 +2571,8 @@ class App {
               dur: 350,
               pairs: [[ax + G.cell / 2, ay + G.cell / 2, tp.x + G.cell / 2, tp.y + G.cell / 2]],
               removedIds: res.removedIds,
+              ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
+              pattern: tappedPattern,
             };
             this.view.render();
             this.view._animateUntil(350, () => this.view.render(), () => {
@@ -2601,6 +2657,8 @@ class App {
         dur: 350,
         pairs: [[ax + G.cell / 2, ay + G.cell / 2, tp.x + G.cell / 2, tp.y + G.cell / 2]],
         removedIds: res.removedIds,
+        ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
+        pattern,
       };
       this.view.render();
       this.view._animateUntil(350, () => this.view.render(), () => {
