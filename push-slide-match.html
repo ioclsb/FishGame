@@ -1270,7 +1270,7 @@ window.GameCore = GameCore;
 // Dynamic board geometry, recomputed on every resize so the square board
 // always fits the viewport (mobile-first). All render/input math reads G.
 const G = { cell: 64, gap: 4, pitch: 68, size: 540, dpr: 1 };
-window.__G = G; // exposed for the Node test harness
+if (DEBUG_ENABLED) window.__G = G; // test-harness hook
 const DPR_CAP = 2.5; // cap backing-store density for mobile GPU/battery
 
 // Fit a COLS x ROWS square board into the #boardWrap box. The cell pitch is
@@ -1290,7 +1290,7 @@ function computeLayout() {
   G.pitch = cell + gap;
   G.size = cell * COLS + gap * (COLS - 1);
 }
-window.__computeLayout = computeLayout; // exposed for the Node test harness
+if (DEBUG_ENABLED) window.__computeLayout = computeLayout; // test-harness hook
 
 // ================= ART: OCEAN THEME =================
 // Six sea-creature patterns. Each block is a procedurally painted glossy

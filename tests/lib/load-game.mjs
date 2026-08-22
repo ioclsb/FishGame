@@ -82,7 +82,7 @@ export function createHarness() {
     addEventListener() {},
     body: fakeEl('body'),
   };
-  sandbox.location = { search: '' };
+  sandbox.location = { search: '?debug=1' }; // exposes __G/__computeLayout test hooks
   sandbox.navigator = {};
   sandbox.devicePixelRatio = 1;
   sandbox.innerWidth = 900;
