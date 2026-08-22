@@ -27,12 +27,18 @@ reduced-motion support.
 ```bash
 # open push-slide-match.html in any modern browser (double-click works)
 
+# everything at once (fails fast on any regression):
+node tests/run-all.mjs
+
 # core logic regression suite (no browser needed):
 node tests/run-core-tests.mjs          # all groups (~100+ assertions)
 node tests/run-core-tests.mjs undo     # single group by name
 
 # full input->view->core interaction smoke suite (virtual clock, manual rAF):
 node tests/smoke-interaction.mjs       # 5 scenarios / 24 checks
+
+# layout regression across extreme viewports, DPR caps and rotation:
+node tests/layout-viewport.mjs         # 8 device profiles / 40 checks
 
 # solver simulation: plays N full games through GameCore (greedy hint chase
 # + shuffle on deadlock) and reports winnability/deadlock statistics
