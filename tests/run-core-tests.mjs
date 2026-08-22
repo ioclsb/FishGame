@@ -79,6 +79,10 @@ sandbox.localStorage = (() => {
   };
 })();
 sandbox.requestAnimationFrame = () => 0;
+// SVG creatures load asynchronously in the browser; in the harness we keep
+// the synchronously-baked base tiles and never fire onload.
+class ImageStub { set src(v) { this._src = v; } get src() { return this._src; } }
+sandbox.Image = ImageStub;
 
 vm.createContext(sandbox);
 vm.runInContext(src, sandbox, { filename: 'push-slide-match.html#inline' });
