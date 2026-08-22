@@ -30,6 +30,13 @@ reduced-motion support.
 # core logic regression suite (no browser needed):
 node tests/run-core-tests.mjs          # all groups (~100+ assertions)
 node tests/run-core-tests.mjs undo     # single group by name
+
+# full input->view->core interaction smoke suite (virtual clock, manual rAF):
+node tests/smoke-interaction.mjs       # 5 scenarios / 24 checks
+
+# solver simulation: plays N full games through GameCore (greedy hint chase
+# + shuffle on deadlock) and reports winnability/deadlock statistics
+node tests/solver-sim.mjs 300          # 100% winnable, ~0.8 shuffles/game
 ```
 
 The page also embeds `window.runSelfTest(which)` asserting push-group
