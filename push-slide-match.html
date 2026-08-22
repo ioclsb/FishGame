@@ -2,60 +2,97 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#16324f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="推推消消乐">
 <title>推推消消乐</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overscroll-behavior: none; }
   body {
-    font-family: "Microsoft YaHei", sans-serif;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
     background: linear-gradient(160deg, #1f2b3a, #2c3e50);
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    position: fixed; inset: 0; width: 100%;
+    display: flex; align-items: stretch; justify-content: center;
+    touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
   }
-  #app { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #app {
+    display: flex; flex-direction: column; align-items: center;
+    gap: clamp(8px, 1.6vh, 16px);
+    width: min(100%, 640px);
+    padding:
+      calc(10px + env(safe-area-inset-top))
+      calc(12px + env(safe-area-inset-right))
+      calc(10px + env(safe-area-inset-bottom))
+      calc(12px + env(safe-area-inset-left));
+  }
   #hud {
-    width: 100%;
-    display: flex; align-items: center; gap: 14px;
+    width: 100%; flex: none;
+    display: flex; align-items: center; gap: 12px;
     color: #fff;
   }
   #progressBar {
-    flex: 1; height: 18px; border-radius: 9px;
+    flex: 1; height: 14px; border-radius: 7px;
     background: rgba(0,0,0,0.35); overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
   }
   #progressFill {
-    height: 100%; width: 0%; border-radius: 9px;
+    height: 100%; width: 0%; border-radius: 7px;
     background: linear-gradient(90deg, #ffd54f, #ff8a65);
     transition: width 0.3s;
   }
-  #controls button {
-    background: #ff7043; border: none; color: #fff;
-    font-size: 14px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+  #controls {
+    flex: none; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
   }
-  #controls button:hover { background: #f4511e; }
+  #controls button {
+    background: rgba(255,112,67,0.92); border: none; color: #fff;
+    font-size: 14px; padding: 9px 14px; border-radius: 10px; cursor: pointer;
+    min-height: 38px; touch-action: manipulation; font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    transition: transform 0.08s ease, background 0.15s ease;
+  }
+  #controls button:active { transform: scale(0.94); background: #f4511e; }
+  @media (max-width: 480px) {
+    #controls button { padding: 9px 10px; font-size: 13px; }
+    #hud { gap: 8px; }
+  }
+  #boardWrap {
+    flex: 1 1 auto; width: 100%; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
   #board {
     background: rgba(0,0,0,0.35);
     border-radius: 14px;
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none;
     cursor: grab;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   }
-  #msg { color: #ffd54f; font-size: 15px; min-height: 20px; font-weight: bold; }
+  #msg {
+    color: #ffd54f; font-size: 14px; min-height: 20px; font-weight: bold;
+    flex: none; text-align: center;
+  }
   #winOverlay {
     position: fixed; inset: 0;
     background: rgba(0,0,0,0.7);
     display: flex; align-items: center; justify-content: center;
     flex-direction: column; gap: 16px;
+    z-index: 10;
   }
   #winOverlay.hidden { display: none; }
-  #winText { color: #ffd54f; font-size: 40px; font-weight: bold; }
+  #winText { color: #ffd54f; font-size: clamp(30px, 8vw, 40px); font-weight: bold; }
   #winOverlay button {
     background: #66bb6a; border: none; color: #fff;
-    font-size: 18px; padding: 10px 26px; border-radius: 10px; cursor: pointer;
+    font-size: 18px; padding: 12px 30px; border-radius: 12px; cursor: pointer;
+    min-height: 48px; touch-action: manipulation;
   }
-  #winOverlay button:hover { background: #43a047; }
+  #winOverlay button:active { transform: scale(0.96); background: #43a047; }
 </style>
 </head>
 <body>
@@ -70,7 +107,7 @@
         <button id="btnRestart">重开</button>
       </div>
     </div>
-    <canvas id="board"></canvas>
+    <div id="boardWrap"><canvas id="board"></canvas></div>
     <div id="msg"></div>
     <div id="winOverlay" class="hidden">
       <div id="winText">恭喜通关！</div>
@@ -1041,8 +1078,28 @@ function runSelfTest(which = "all") {
 window.GameCore = GameCore;
 
 // ================= RENDER VIEW (Canvas 2D) =================
-const CELL = 64, GAP = 4;
-const BOARD_PX = COLS * CELL + (COLS - 1) * GAP;
+// Dynamic board geometry, recomputed on every resize so the square board
+// always fits the viewport (mobile-first). All render/input math reads G.
+const G = { cell: 64, gap: 4, pitch: 68, size: 540, dpr: 1 };
+
+const DPR_CAP = 2.5; // cap backing-store density for mobile GPU/battery
+
+// Fit a COLS x ROWS square board into the #boardWrap box. The cell pitch is
+// snapped to whole pixels and the canvas CSS size equals the backing-store
+// logical size, so pointer math stays exact.
+function computeLayout() {
+  const wrap = document.getElementById('boardWrap');
+  if (!wrap) return;
+  const availW = Math.max(160, wrap.clientWidth);
+  const availH = Math.max(160, wrap.clientHeight);
+  let size = Math.floor(Math.min(availW, availH));
+  const gap = Math.max(2, Math.round(size * 0.011));
+  const cell = Math.max(24, Math.floor((size - gap * (COLS - 1)) / COLS));
+  G.gap = gap;
+  G.cell = cell;
+  G.pitch = cell + gap;
+  G.size = cell * COLS + gap * (COLS - 1);
+}
 
 const PATTERN_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22',
@@ -1051,24 +1108,28 @@ const PATTERN_COLORS = [
 class RenderView {
   static spriteFor(pattern) {
     if (!RenderView._sprites) RenderView._sprites = {};
-    if (RenderView._sprites[pattern]) return RenderView._sprites[pattern];
+    const key = pattern + '@' + G.cell + '@' + G.dpr;
+    if (RenderView._sprites[key]) return RenderView._sprites[key];
+    // Invalidate stale-size entries so a resize rebakes cleanly.
+    for (const k of Object.keys(RenderView._sprites)) delete RenderView._sprites[k];
     const s = document.createElement('canvas');
-    s.width = CELL; s.height = CELL;
+    s.width = G.cell * G.dpr; s.height = G.cell * G.dpr;
     const ctx = s.getContext('2d');
+    ctx.scale(G.dpr, G.dpr);
     const color = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
     ctx.beginPath();
-    ctx.arc(CELL / 2, CELL / 2, CELL * 0.38, 0, Math.PI * 2);
+    ctx.arc(G.cell / 2, G.cell / 2, G.cell * 0.38, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = Math.max(2, G.cell * 0.045);
     ctx.strokeStyle = 'rgba(255,255,255,0.55)';
     ctx.stroke();
     ctx.fillStyle = '#fff';
-    ctx.font = `bold ${Math.floor(CELL * 0.34)}px sans-serif`;
+    ctx.font = `bold ${Math.floor(G.cell * 0.34)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(pattern), CELL / 2, CELL / 2 + 1);
-    RenderView._sprites[pattern] = s;
+    ctx.fillText(String(pattern), G.cell / 2, G.cell / 2 + 1);
+    RenderView._sprites[key] = s;
     return s;
   }
 
@@ -1093,38 +1154,49 @@ class RenderView {
     this.render();
   }
 
+  // Recompute geometry from the current viewport and repaint. Sprites are
+  // cached per (pattern, cell, dpr) so they rebake automatically.
+  relayout() {
+    const wasSize = G.size;
+    this.resize();
+    if (G.size !== wasSize || this.bg.width !== G.size * G.dpr) this._buildBackground();
+    this.render();
+  }
+
   resize() {
-    const dpr = this.dpr;
-    this.canvas.width = BOARD_PX * dpr;
-    this.canvas.height = BOARD_PX * dpr;
-    this.canvas.style.width = BOARD_PX + 'px';
-    this.canvas.style.height = BOARD_PX + 'px';
+    computeLayout();
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    G.dpr = dpr;
+    this.canvas.width = G.size * dpr;
+    this.canvas.height = G.size * dpr;
+    this.canvas.style.width = G.size + 'px';
+    this.canvas.style.height = G.size + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   _buildBackground() {
     const bg = document.createElement('canvas');
-    bg.width = BOARD_PX * this.dpr;
-    bg.height = BOARD_PX * this.dpr;
+    bg.width = G.size * this.dpr;
+    bg.height = G.size * this.dpr;
     const ctx = bg.getContext('2d');
     ctx.scale(this.dpr, this.dpr);
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        const x = c * (CELL + GAP), y = r * (CELL + GAP);
-        ctx.fillRect(x, y, CELL, CELL);
+        const x = c * G.pitch, y = r * G.pitch;
+        ctx.fillRect(x, y, G.cell, G.cell);
       }
     }
     this.bg = bg;
   }
 
   gridToPixel(r, c) {
-    return { x: c * (CELL + GAP), y: r * (CELL + GAP) };
+    return { x: c * G.pitch, y: r * G.pitch };
   }
 
   pixelToGrid(x, y) {
-    const c = Math.floor(x / (CELL + GAP));
-    const r = Math.floor(y / (CELL + GAP));
+    const c = Math.floor(x / G.pitch);
+    const r = Math.floor(y / G.pitch);
     return { r, c };
   }
 
@@ -1142,8 +1214,8 @@ class RenderView {
 
   render() {
     const ctx = this.ctx;
-    ctx.clearRect(0, 0, BOARD_PX, BOARD_PX);
-    ctx.drawImage(this.bg, 0, 0, BOARD_PX, BOARD_PX);
+    ctx.clearRect(0, 0, G.size, G.size);
+    ctx.drawImage(this.bg, 0, 0, G.size, G.size);
 
     // Drag axis highlight: while dragging, tint the row AND column of the
     // leading block (A) with a light-white mask so the player can see which
@@ -1160,7 +1232,7 @@ class RenderView {
       const px = d.dc * offsetPx;
       const py = d.dr * offsetPx;
       for (const m of active.group) {
-        moving.set(m.id, { x: m.c * (CELL + GAP) + px, y: m.r * (CELL + GAP) + py });
+        moving.set(m.id, { x: m.c * G.pitch + px, y: m.r * G.pitch + py });
       }
       if (this.drag) {
         // The cross mask ALWAYS centers on the dragged block, snapping to the
@@ -1168,17 +1240,17 @@ class RenderView {
         // block slides into the next row/column, the mask's row/column snaps
         // to that cell (discrete, not smooth pointer tracking).
         const a = active.group[0];
-        const cellPx = CELL + GAP;
+        const cellPx = G.pitch;
         const dragDir = this.drag.dir;
         const d = GameCore.DIRS[dragDir];
         const offsetPx = this.drag.offsetPx;
-        const cx = a.c * cellPx + CELL / 2 + d.dc * offsetPx; // block center px
-        const cy = a.r * cellPx + CELL / 2 + d.dr * offsetPx;
+        const cx = a.c * cellPx + G.cell / 2 + d.dc * offsetPx; // block center px
+        const cy = a.r * cellPx + G.cell / 2 + d.dr * offsetPx;
         const curR = Math.floor(cy / cellPx);
         const curC = Math.floor(cx / cellPx);
         ctx.fillStyle = 'rgba(255,255,255,0.28)';
-        ctx.fillRect(0, curR * cellPx, BOARD_PX, CELL);
-        ctx.fillRect(curC * cellPx, 0, CELL, BOARD_PX);
+        ctx.fillRect(0, curR * cellPx, G.size, G.cell);
+        ctx.fillRect(curC * cellPx, 0, G.cell, G.size);
       }
     }
 
@@ -1188,8 +1260,8 @@ class RenderView {
       ctx.lineWidth = 5;
       for (const [ax, ay, bx, by] of this.elimFlash.pairs) {
         ctx.beginPath();
-        ctx.moveTo(ax + CELL / 2, ay + CELL / 2);
-        ctx.lineTo(bx + CELL / 2, by + CELL / 2);
+        ctx.moveTo(ax + G.cell / 2, ay + G.cell / 2);
+        ctx.lineTo(bx + G.cell / 2, by + G.cell / 2);
         ctx.stroke();
       }
     }
@@ -1211,8 +1283,8 @@ class RenderView {
 
     for (const block of this.core.getBlocks()) {
       const pos = moving.get(block.id);
-      const x = pos ? pos.x : block.c * (CELL + GAP);
-      const y = pos ? pos.y : block.r * (CELL + GAP);
+      const x = pos ? pos.x : block.c * G.pitch;
+      const y = pos ? pos.y : block.r * G.pitch;
       if (pulsePattern !== null && block.pattern === pulsePattern) {
         this.drawBlock(block, x, y, 1 + pulseScale);
       } else {
@@ -1227,11 +1299,11 @@ class RenderView {
         ctx.strokeStyle = '#ffd54f';
         ctx.lineWidth = 4;
         const p = this.gridToPixel(b.r, b.c);
-        ctx.strokeRect(p.x + 2, p.y + 2, CELL - 4, CELL - 4);
+        ctx.strokeRect(p.x + 2, p.y + 2, G.cell - 4, G.cell - 4);
         const tp = this.gridToPixel(target.r, target.c);
         ctx.beginPath();
-        ctx.moveTo(p.x + CELL / 2, p.y + CELL / 2);
-        ctx.lineTo(tp.x + CELL / 2, tp.y + CELL / 2);
+        ctx.moveTo(p.x + G.cell / 2, p.y + G.cell / 2);
+        ctx.lineTo(tp.x + G.cell / 2, tp.y + G.cell / 2);
         ctx.stroke();
       }
     }
@@ -1240,7 +1312,7 @@ class RenderView {
       // Dark translucent mask over the whole board; every selectable B target
       // stays bright and is redrawn on top so they are not obscured.
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
-      ctx.fillRect(0, 0, BOARD_PX, BOARD_PX);
+      ctx.fillRect(0, 0, G.size, G.size);
       for (const t of this.pick.targets) {
         if (!t) continue;
         const p = this.gridToPixel(t.r, t.c);
@@ -1251,7 +1323,7 @@ class RenderView {
         ctx.restore();
         ctx.strokeStyle = '#ffd54f';
         ctx.lineWidth = 4;
-        ctx.strokeRect(p.x + 2, p.y + 2, CELL - 4, CELL - 4);
+        ctx.strokeRect(p.x + 2, p.y + 2, G.cell - 4, G.cell - 4);
       }
     }
 
@@ -1269,9 +1341,9 @@ class RenderView {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const p = this.gridToPixel(r, c);
-        ctx.strokeRect(p.x + 1, p.y + 1, CELL - 2, CELL - 2);
+        ctx.strokeRect(p.x + 1, p.y + 1, G.cell - 2, G.cell - 2);
         const v = this.core.getGrid()[r][c];
-        ctx.fillText(v === 0 ? '·' : String(v), p.x + CELL / 2, p.y + CELL / 2);
+        ctx.fillText(v === 0 ? '·' : String(v), p.x + G.cell / 2, p.y + G.cell / 2);
       }
     }
     if (this.hoverCell) {
@@ -1279,23 +1351,23 @@ class RenderView {
       const p = this.gridToPixel(r, c);
       ctx.strokeStyle = '#ffd54f';
       ctx.lineWidth = 3;
-      ctx.strokeRect(p.x + 1, p.y + 1, CELL - 2, CELL - 2);
+      ctx.strokeRect(p.x + 1, p.y + 1, G.cell - 2, G.cell - 2);
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`(${r},${c})`, p.x + CELL / 2, p.y - 8);
+      ctx.fillText(`(${r},${c})`, p.x + G.cell / 2, p.y - 8);
     }
   }
 
   drawBlock(block, x, y, scale = 1) {
     if (scale === 1) {
-      this.ctx.drawImage(RenderView.spriteFor(block.pattern), x, y);
+      this.ctx.drawImage(RenderView.spriteFor(block.pattern), x, y, G.cell, G.cell);
       return;
     }
     // Scale around the block's own center.
-    const cx = x + CELL / 2, cy = y + CELL / 2;
-    const w = CELL * scale, h = CELL * scale;
+    const cx = x + G.cell / 2, cy = y + G.cell / 2;
+    const w = G.cell * scale, h = G.cell * scale;
     this.ctx.drawImage(RenderView.spriteFor(block.pattern), cx - w / 2, cy - h / 2, w, h);
   }
 
@@ -1320,7 +1392,7 @@ class RenderView {
 
   updateDrag(offsetPx) {
     if (!this.drag) return;
-    const cellPx = CELL + GAP;
+    const cellPx = G.pitch;
     const maxPx = this.drag.maxDist * cellPx;
     this.drag.offsetPx = Math.max(0, Math.min(maxPx, offsetPx));
     this.render();
@@ -1328,7 +1400,7 @@ class RenderView {
 
   snapAndResolve(onDone) {
     if (!this.drag) { onDone && onDone(); return; }
-    const cellPx = CELL + GAP;
+    const cellPx = G.pitch;
     // Support discrete-point sliding: snap to the cell the user released on
     // (clamped to 1..maxDist), then resolve THAT distance. If it matches,
     // eliminate; otherwise revert back to origin. The user can stop at an
@@ -1540,7 +1612,27 @@ class App {
     this.sound = new SoundManager();
     this._bindControls();
     this._bindInput();
+    this._bindViewport();
     this.updateHud();
+  }
+
+  // Keep the board fitted to the viewport across rotation, browser chrome
+  // show/hide and window resizing. rAF-throttled to avoid layout thrash.
+  _bindViewport() {
+    let scheduled = false;
+    const onResize = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        this.view.relayout();
+      });
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+    // Suppress the long-press context menu on the board (mobile).
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   // Attach sound callbacks to a RenderView. Called when the view is created or
@@ -1663,7 +1755,7 @@ class App {
         this.press.maxDist = maxDist;
         if (this.view.drag) { this.view.drag.dir = curDir; this.view.drag.maxDist = maxDist; }
       }
-      this.view.updateDrag(Math.min(pxDist, maxDist * (CELL + GAP)));
+      this.view.updateDrag(Math.min(pxDist, maxDist * G.pitch));
     });
     const endDrag = () => {
       if (!this.busy) return;
@@ -1689,14 +1781,14 @@ class App {
           const res = this.core.clickResolve(clickRc.r, clickRc.c);
           if (res.matched) {
             this.sound.match();
-            const cellPx = CELL + GAP;
+            const cellPx = G.pitch;
             const ax = clickRc.c * cellPx;
             const ay = clickRc.r * cellPx;
             const tp = this.view.gridToPixel(res.target.r, res.target.c);
             this.view.elimFlash = {
               t0: performance.now(),
               dur: 350,
-              pairs: [[ax + CELL / 2, ay + CELL / 2, tp.x + CELL / 2, tp.y + CELL / 2]],
+              pairs: [[ax + G.cell / 2, ay + G.cell / 2, tp.x + G.cell / 2, tp.y + G.cell / 2]],
               removedIds: res.removedIds,
             };
             this.view.render();
@@ -1758,13 +1850,13 @@ class App {
     this.view.pick = null;
     if (res.matched) {
       this.sound.match();
-      const cellPx = CELL + GAP;
+      const cellPx = G.pitch;
       const ax = c * cellPx, ay = r * cellPx;
       const tp = this.view.gridToPixel(tr, tc);
       this.view.elimFlash = {
         t0: performance.now(),
         dur: 350,
-        pairs: [[ax + CELL / 2, ay + CELL / 2, tp.x + CELL / 2, tp.y + CELL / 2]],
+        pairs: [[ax + G.cell / 2, ay + G.cell / 2, tp.x + G.cell / 2, tp.y + G.cell / 2]],
         removedIds: res.removedIds,
       };
       this.view.render();
