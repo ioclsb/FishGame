@@ -33,8 +33,9 @@ function fakeEl(tag = 'div') {
   const el = {
     tagName: String(tag).toUpperCase(),
     style: {},
-    classList: { add() {}, remove() {}, contains() { return false; } },
+    classList: { add() {}, remove() {}, contains() { return false; }, toggle() {} },
     addEventListener() {}, removeEventListener() {},
+    setAttribute() {}, getAttribute: () => null,
     setPointerCapture() {}, releasePointerCapture() {},
     getContext: () => makeCtx(),
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 540, height: 540 }),

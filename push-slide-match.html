@@ -81,6 +81,11 @@
   }
   #controls button svg { width: 20px; height: 20px; }
   #controls button:active { transform: scale(0.90); background: rgba(255,255,255,0.26); }
+  /* sound button: show waves when on, cross when muted */
+  #btnSound .snd-off { display: none; }
+  #btnSound.muted .snd-on { display: none; }
+  #btnSound.muted .snd-off { display: block; }
+  #btnSound.muted { color: rgba(255,255,255,0.55); }
   @media (max-width: 480px) {
     #controls button { width: 38px; height: 38px; }
     #controls button svg { width: 18px; height: 18px; }
@@ -155,6 +160,51 @@
     transition: transform 0.08s ease, filter 0.15s ease;
   }
   #winOverlay button:active { transform: scale(0.95); filter: brightness(1.08); }
+  .confetti {
+    position: absolute; top: -4vh; z-index: 1;
+    animation-name: confettiFall;
+    animation-timing-function: linear; animation-fill-mode: both;
+    pointer-events: none;
+    box-shadow: 0 0 6px rgba(255,255,255,0.35);
+  }
+  @keyframes confettiFall {
+    from { transform: translateY(0) translateX(0) rotate(0deg); opacity: 1; }
+    to   { transform: translateY(112vh) translateX(var(--drift, 0px)) rotate(660deg); opacity: 0.85; }
+  }
+  #coach {
+    position: fixed; inset: 0; z-index: 9;
+    background: rgba(2,10,22,0.72);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    animation: fadeIn 0.3s ease;
+  }
+  #coach.hidden { display: none; }
+  #coachCard {
+    display: flex; flex-direction: column; gap: 18px;
+    padding: clamp(24px, 7vw, 40px);
+    border-radius: 24px;
+    background: linear-gradient(170deg, rgba(28,64,102,0.92), rgba(10,30,54,0.95));
+    border: 1px solid rgba(255,255,255,0.16);
+    box-shadow: 0 24px 70px rgba(0,5,15,0.6), inset 0 1px 0 rgba(255,255,255,0.14);
+    max-width: min(86vw, 360px);
+    animation: popIn 0.4s cubic-bezier(.22,1.4,.36,1);
+  }
+  .coachRow {
+    display: flex; align-items: center; gap: 12px;
+    color: rgba(234,246,255,0.94); font-size: 14.5px; font-weight: 500;
+    line-height: 1.45;
+  }
+  .coachRow svg { width: 30px; height: 30px; flex: none; }
+  #coachStart {
+    margin-top: 4px;
+    background: linear-gradient(180deg, #58d97e, #2fae5c);
+    border: none; color: #fff; font-weight: 700;
+    font-size: 16px; padding: 12px 28px; border-radius: 999px; cursor: pointer;
+    min-height: 46px; touch-action: manipulation;
+    box-shadow: 0 6px 20px rgba(46,174,92,0.45), inset 0 1px 0 rgba(255,255,255,0.35);
+    transition: transform 0.08s ease, filter 0.15s ease;
+  }
+  #coachStart:active { transform: scale(0.95); filter: brightness(1.08); }
 </style>
 </head>
 <body>
@@ -181,11 +231,33 @@
         <button id="btnRestart" aria-label="重开" title="重开">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
         </button>
+        <button id="btnSound" aria-label="声音开关" title="声音开关" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 5 6 9H2v6h4l5 4V5Z"/>
+            <path class="snd-on" d="M15.5 8.5a5 5 0 0 1 0 7"/>
+            <path class="snd-on" d="M18.4 5.6a9 9 0 0 1 0 12.8"/>
+            <line class="snd-off" x1="16" y1="9" x2="22" y2="15"/>
+            <line class="snd-off" x1="22" y1="9" x2="16" y2="15"/>
+          </svg>
+        </button>
       </div>
     </div>
     <div id="boardWrap">
       <canvas id="board"></canvas>
       <div id="msg"></div>
+    </div>
+    <div id="coach" class="hidden">
+      <div id="coachCard">
+        <div class="coachRow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+          <span>按住方块拖动，推动整排滑动</span>
+        </div>
+        <div class="coachRow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ffd54f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9l-5 3 5 3V9Z"/><path d="M9 12h5"/><circle cx="17" cy="12" r="4"/></svg>
+          <span>同款方块直线相对时，点击直接配对消除</span>
+        </div>
+        <button id="coachStart">开始游戏</button>
+      </div>
     </div>
     <div id="winOverlay" class="hidden">
       <div id="winCard">
@@ -1448,10 +1520,77 @@ class RenderView {
     this.onMatch = null;   // called on a successful drag elimination
     this.onRevert = null;  // called when a drag ends without a match
     this.hoverCell = null; // { r, c } under mouse (debug mode only)
+    this.particles = [];   // match burst particles
+    this.rings = [];       // shockwave rings
+    this.bubbles = null;   // ambient drifting bubbles (lazy init)
+    this._lastT = performance.now();
     this._animToken = 0;
     this.resize();
     this._buildBackground();
     this.render();
+    this.startLoop();
+  }
+
+  // Continuous frame loop: drives particles, ambient bubbles and any timed
+  // effect without per-animation bookkeeping. Idles cheaply when hidden.
+  startLoop() {
+    if (RenderView._looping) return;
+    const step = () => {
+      RenderView._raf = requestAnimationFrame(step);
+      const view = RenderView._active;
+      if (!view || document.hidden) return;
+      view._updateEffects(performance.now());
+      view.render();
+    };
+    RenderView._looping = true;
+    RenderView._active = this;
+    RenderView._raf = requestAnimationFrame(step);
+  }
+
+  static setActiveView(view) {
+    RenderView._active = view;
+  }
+
+  _initBubbles() {
+    this.bubbles = [];
+    const n = Math.max(8, Math.round(G.size / 48));
+    for (let i = 0; i < n; i++) {
+      this.bubbles.push({
+        x: Math.random() * G.size,
+        y: Math.random() * G.size,
+        r: G.cell * (0.035 + Math.random() * 0.045),
+        sp: G.cell * (0.12 + Math.random() * 0.28),
+        ph: Math.random() * Math.PI * 2,
+        a: 0.07 + Math.random() * 0.11,
+      });
+    }
+  }
+
+  _updateEffects(now) {
+    const dt = Math.min(0.05, (now - this._lastT) / 1000);
+    this._lastT = now;
+    // ambient bubbles rise with a gentle sway
+    if (!this.bubbles) this._initBubbles();
+    for (const b of this.bubbles) {
+      b.y -= b.sp * dt;
+      b.x += Math.sin(now * 0.0011 + b.ph) * 12 * dt;
+      if (b.y < -b.r * 2) { b.y = G.size + b.r * 2; b.x = Math.random() * G.size; }
+    }
+    // match particles: slight buoyancy then fade
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.t += dt;
+      if (p.t >= p.life) { this.particles.splice(i, 1); continue; }
+      p.vy += 90 * dt;
+      p.vx *= (1 - 1.4 * dt);
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const g = this.rings[i];
+      g.t += dt;
+      if (g.t >= g.dur) this.rings.splice(i, 1);
+    }
   }
 
   // Recompute geometry from the current viewport and repaint. Sprites are
@@ -1584,8 +1723,23 @@ class RenderView {
 
   render() {
     const ctx = this.ctx;
+    const now = performance.now();
     ctx.clearRect(0, 0, G.size, G.size);
     ctx.drawImage(this.bg, 0, 0, G.size, G.size);
+
+    // ambient bubbles drift behind the blocks
+    if (this.bubbles) {
+      for (const b of this.bubbles) {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(190,235,255,${b.a})`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.32, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${b.a * 1.4})`;
+        ctx.fill();
+      }
+    }
 
     // Drag axis highlight: while dragging, tint the row AND column of the
     // leading block (A) with a light-white mask so the player can see which
@@ -1682,8 +1836,7 @@ class RenderView {
       // Dark translucent mask over the whole board; every selectable B target
       // stays bright and is redrawn on top so they are not obscured.
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
-      ctx.fillRect(0, 0, G.size, G.size);
-      for (const t of this.pick.targets) {
+      ctx.fillRect(0, 0, G.size, G.size);      for (const t of this.pick.targets) {
         if (!t) continue;
         const p = this.gridToPixel(t.r, t.c);
         ctx.save();
@@ -1695,6 +1848,28 @@ class RenderView {
         ctx.lineWidth = 4;
         ctx.strokeRect(p.x + 2, p.y + 2, G.cell - 4, G.cell - 4);
       }
+    }
+
+    // shockwave rings + particles on top of everything
+    for (const g of this.rings) {
+      const t = g.t / g.dur;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.maxR * (0.2 + 0.8 * t), 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,255,255,${(0.5 * (1 - t)).toFixed(3)})`;
+      ctx.lineWidth = Math.max(1.5, G.cell * 0.06 * (1 - t));
+      ctx.stroke();
+    }
+    for (const p of this.particles) {
+      const t = p.t / p.life;
+      const r = p.r * (1 - 0.55 * t);
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(r, 0.1));
+      g.addColorStop(0, 'rgba(255,255,255,' + (0.9 * (1 - t)).toFixed(3) + ')');
+      g.addColorStop(0.6, this._hexA(p.color, (0.75 * (1 - t)).toFixed(3)));
+      g.addColorStop(1, this._hexA(p.color, '0'));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     if (DEBUG_ENABLED) this._renderDebugOverlay();
@@ -1730,6 +1905,11 @@ class RenderView {
     }
   }
 
+  _hexA(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+
   drawBlock(block, x, y, scale = 1) {
     if (scale === 1) {
       this.ctx.drawImage(RenderView.spriteFor(block.pattern), x, y, G.cell, G.cell);
@@ -1750,6 +1930,31 @@ class RenderView {
       this.bounce = null;
       this.render();
     });
+  }
+
+  // Spawn a bubble burst + shockwave ring at a grid cell. Called for both
+  // halves of an eliminated pair; power scales with the combo streak.
+  matchBurst(r, c, pattern, power = 1) {
+    const cx = c * G.pitch + G.cell / 2;
+    const cy = r * G.pitch + G.cell / 2;
+    const base = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
+    const palette = ['#ffffff', '#cfefff', shade(base, 70), base];
+    const n = Math.round(10 + 6 * Math.min(power, 3));
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = (60 + Math.random() * 150) * (G.cell / 64) * (1 + 0.22 * Math.min(power, 3));
+      this.particles.push({
+        x: cx + (Math.random() - 0.5) * G.cell * 0.4,
+        y: cy + (Math.random() - 0.5) * G.cell * 0.4,
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp - 50 * (G.cell / 64),
+        r: G.cell * (0.05 + Math.random() * 0.085),
+        t: 0,
+        life: 0.45 + Math.random() * 0.45,
+        color: palette[Math.floor(Math.random() * palette.length)],
+      });
+    }
+    this.rings.push({ x: cx, y: cy, t: 0, dur: 0.38, maxR: G.cell * (0.85 + 0.15 * Math.min(power, 3)), color: base });
   }
 
   startDrag(group, dir, maxDist) {
@@ -1837,12 +2042,16 @@ class RenderView {
       this.drag = null;
       const res = this.core.resolve({ group, dir, dist });
       if (res.match) {
-        if (this.onMatch) this.onMatch();
-        const d = GameCore.DIRS[dir];
         const a = group[0];
         const ax = (a.c + d.dc * dist) * cellPx;
         const ay = (a.r + d.dr * dist) * cellPx;
         const tp = this.gridToPixel(res.target.r, res.target.c);
+        if (this.onMatchFx) {
+          this.onMatchFx({
+            cells: [{ r: a.r + d.dr * dist, c: a.c + d.dc * dist }, { ...res.target }],
+            pattern: group[0].pattern,
+          });
+        }
         this.elimFlash = {
           t0: performance.now(),
           dur: 350,
@@ -1906,66 +2115,125 @@ window.RenderView = RenderView;
 window.runSelfTest = runSelfTest;
 
 // ================= SOUND (Web Audio synth, no assets) =================
-// Generates short UI sound effects with oscillators/noise. All sounds are
-// synthesized so the single-file game needs no external audio assets.
+// All SFX are synthesized. A persistent master gain implements mute, and the
+// preference is stored in localStorage. Match chimes climb a pentatonic scale
+// with the combo streak so long chains feel rewarding.
 class SoundManager {
   constructor() {
     this.ctx = null;
-    this.enabled = true;
-    this._initOnFirstUse();
+    this.master = null;
+    this.enabled = SoundManager.loadPref();
+  }
+
+  static loadPref() {
+    try { return localStorage.getItem('psm.sound') !== 'off'; } catch (e) { return true; }
+  }
+
+  setEnabled(on) {
+    this.enabled = on;
+    try { localStorage.setItem('psm.sound', on ? 'on' : 'off'); } catch (e) {}
+    if (this.master && this.ctx) {
+      this.master.gain.setTargetAtTime(on ? 0.5 : 0.0001, this.ctx.currentTime, 0.02);
+    }
+    if (on) this._initOnFirstUse();
   }
 
   _initOnFirstUse() {
-    // AudioContext must be created/resumed after a user gesture in most
-    // browsers, so we lazily create it on the first sound call.
+    // AudioContext must be created/resumed after a user gesture in most browsers.
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) this.ctx = new AC();
-    } catch (e) { this.ctx = null; this.enabled = false; }
+      if (!AC) return;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.enabled ? 0.5 : 0.0001;
+      this.master.connect(this.ctx.destination);
+    } catch (e) { this.ctx = null; }
   }
 
-  // A short tone helper.
-  _tone(freq, dur, type, vol, when = 0) {
+  // Short tone with pluck envelope, routed through the master gain.
+  _tone(freq, dur, type, vol, when = 0, slideTo = null) {
     if (!this.enabled || !this.ctx) return;
     const t0 = this.ctx.currentTime + when;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.master);
     osc.start(t0);
-    osc.stop(t0 + dur + 0.02);
+    osc.stop(t0 + dur + 0.03);
   }
 
-  click() {
-    this._initOnFirstUse();
-    this._tone(660, 0.06, 'triangle', 0.25);
+  _noise(dur, vol, fFrom, fTo, when = 0) {
+    if (!this.enabled || !this.ctx) return;
+    const t0 = this.ctx.currentTime + when;
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.1;
+    bp.frequency.setValueAtTime(fFrom, t0);
+    bp.frequency.exponentialRampToValueAtTime(fTo, t0 + dur);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(bp).connect(gain).connect(this.master);
+    src.start(t0);
   }
 
-  dragStart() {
+  // Pentatonic ladder: each consecutive combo step climbs one note.
+  static COMBO_STEPS = [0, 2, 4, 7, 9, 12, 14, 16];
+
+  match(combo = 1) {
     this._initOnFirstUse();
-    this._tone(440, 0.09, 'sine', 0.22);
+    const step = SoundManager.COMBO_STEPS[Math.min(Math.max(combo, 1), SoundManager.COMBO_STEPS.length) - 1];
+    const f = 523.25 * Math.pow(2, step / 12);
+    this._tone(f, 0.14, 'triangle', 0.34);
+    this._tone(f * 2, 0.10, 'sine', 0.12, 0.02);
+    this._noise(0.08, 0.05, 5000, 9000); // sparkle
   }
 
   release() {
     this._initOnFirstUse();
-    this._tone(520, 0.07, 'triangle', 0.2);
+    this._tone(420, 0.13, 'sine', 0.16, 0, 270);
   }
 
-  match() {
+  click() {
     this._initOnFirstUse();
-    // Two quick rising tones for a satisfying success chime.
-    this._tone(660, 0.1, 'sine', 0.3, 0);
-    this._tone(880, 0.12, 'sine', 0.3, 0.09);
+    this._tone(320, 0.06, 'triangle', 0.14);
   }
 
   pick() {
     this._initOnFirstUse();
-    this._tone(700, 0.08, 'triangle', 0.25);
+    this._tone(700, 0.07, 'triangle', 0.22);
+  }
+
+  ui() {
+    this._initOnFirstUse();
+    this._tone(820, 0.04, 'square', 0.06);
+  }
+
+  shuffleSfx() {
+    this._initOnFirstUse();
+    this._noise(0.28, 0.18, 300, 2400);
+    this._tone(220, 0.18, 'sine', 0.10, 0.02, 330);
+  }
+
+  win() {
+    this._initOnFirstUse();
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      this._tone(f, 0.22, 'triangle', 0.30, i * 0.11);
+      this._tone(f * 2, 0.16, 'sine', 0.10, i * 0.11 + 0.03);
+    });
+    this._noise(0.5, 0.06, 6000, 11000, 0.33);
   }
 }
 
@@ -1975,6 +2243,8 @@ class App {
     this.core = new GameCore();
     this.canvas = document.getElementById('board');
     this.view = new RenderView(this.canvas, this.core);
+    this.streak = 0;
+    this.stats = this._freshStats();
     this._wireView(this.view);
     this.busy = false;
     this.press = null; // { r, c, startX, startY, dir, group, maxDist }
@@ -1984,6 +2254,7 @@ class App {
     this._bindInput();
     this._bindViewport();
     this.updateHud();
+    this._maybeCoach();
   }
 
   // Keep the board fitted to the viewport across rotation, browser chrome
@@ -2005,12 +2276,37 @@ class App {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  // Attach sound callbacks to a RenderView. Called when the view is created or
-  // rebuilt (restart) so drag-match and drag-revert sounds keep working.
+  // Attach per-view callbacks. Called when the view is created or rebuilt
+  // (restart) so effects/sounds keep working against the fresh instance.
   _wireView(view) {
     RenderView.onChange = () => { if (this.view) this.view.render(); }; // async SVG sprites
-    view.onMatch = () => { if (this.sound) this.sound.match(); };
-    view.onRevert = () => { if (this.sound) this.sound.release(); };
+    RenderView.setActiveView(view); // keep the frame loop on the fresh view
+    view.onRevert = () => {
+      if (this.sound) this.sound.release();
+      this.streak = 0; // failed drag breaks the chain
+    };
+    // Drag-elimination FX: view reports geometry, App owns feedback policy.
+    view.onMatchFx = (fx) => { this._registerMatch(fx.cells, fx.pattern); };
+  }
+
+  // Unified successful-elimination hook: streak tracking, sound, haptics,
+  // particle bursts and combo toast. Cells are the removed grid coords.
+  _registerMatch(cells, pattern) {
+    this.streak = (this.streak || 0) + 1;
+    this.stats.moves++;
+    this.sound.match(this.streak);
+    this.vibrate(14);
+    const power = Math.min(this.streak, 3);
+    for (const cell of cells) this.view.matchBurst(cell.r, cell.c, pattern, power);
+    if (this.streak >= 2) this.setMsg(`连击 ×${this.streak}`, 950);
+  }
+
+  vibrate(msOrPattern) {
+    try { if (navigator.vibrate) navigator.vibrate(msOrPattern); } catch (e) {}
+  }
+
+  _freshStats() {
+    return { t0: performance.now(), moves: 0, hints: 0, undos: 0 };
   }
 
   _bindControls() {
@@ -2022,12 +2318,18 @@ class App {
       this.core.shuffle();
       this.view.hint = null;
       this.view.drag = null;
+      this.streak = 0;
+      this.sound.ui();
+      this.sound.shuffleSfx();
+      this.vibrate(20);
       this.view.render();
       this.updateHud();
       this.busy = false;
     });
     document.getElementById('btnHint').addEventListener('click', () => {
       if (this.busy) return;
+      this.sound.ui();
+      this.stats.hints++;
       const h = this.core.findHint();
       if (h) {
         this.view.hint = h;
@@ -2041,10 +2343,44 @@ class App {
     });
     document.getElementById('btnUndo').addEventListener('click', () => {
       if (this.busy) return;
+      this.sound.ui();
       this.undo();
     });
-    document.getElementById('btnRestart').addEventListener('click', () => this.restart());
-    document.getElementById('winRestart').addEventListener('click', () => this.restart());
+    document.getElementById('btnRestart').addEventListener('click', () => {
+      this.sound.ui();
+      this.restart();
+    });
+    document.getElementById('winRestart').addEventListener('click', () => {
+      this.sound.ui();
+      this.restart();
+    });
+    const btnSound = document.getElementById('btnSound');
+    const paintSoundBtn = () => {
+      btnSound.setAttribute('aria-pressed', String(!this.sound.enabled));
+      btnSound.classList.toggle('muted', !this.sound.enabled);
+    };
+    btnSound.addEventListener('click', () => {
+      this.sound.setEnabled(!this.sound.enabled);
+      paintSoundBtn();
+      if (this.sound.enabled) { this.sound.ui(); }
+      this.setMsg(this.sound.enabled ? '声音已开启' : '声音已关闭', 1400);
+    });
+    paintSoundBtn();
+  }
+
+  // First-visit coaching overlay, persisted in localStorage.
+  _maybeCoach() {
+    let coached = false;
+    try { coached = localStorage.getItem('psm.coached') === '1'; } catch (e) {}
+    if (coached) return;
+    const el = document.getElementById('coach');
+    el.classList.remove('hidden');
+    const dismiss = () => {
+      el.classList.add('hidden');
+      try { localStorage.setItem('psm.coached', '1'); } catch (e) {}
+      this.sound.ui();
+    };
+    document.getElementById('coachStart').addEventListener('click', dismiss);
   }
 
   _bindInput() {
@@ -2144,18 +2480,21 @@ class App {
             this.core.pushSnapshot(); // snapshot before the pick so undo restores A to origin
             this.picking = { r: clickRc.r, c: clickRc.c, targets: multi };
             this.view.pick = this.picking;
+            this.sound.pick();
+            this.vibrate(8);
             this.view.render();
             this.busy = false;
             dbg({ type: 'pickOpen', r: clickRc.r, c: clickRc.c, multi });
             return;
           }
+          const tappedPattern = this.core.inBounds(clickRc.r, clickRc.c) ? this.core.getGrid()[clickRc.r][clickRc.c] : 0;
           const res = this.core.clickResolve(clickRc.r, clickRc.c);
           if (res.matched) {
-            this.sound.match();
             const cellPx = G.pitch;
             const ax = clickRc.c * cellPx;
             const ay = clickRc.r * cellPx;
             const tp = this.view.gridToPixel(res.target.r, res.target.c);
+            this._registerMatch([clickRc, { ...res.target }], tappedPattern);
             this.view.elimFlash = {
               t0: performance.now(),
               dur: 350,
@@ -2171,8 +2510,8 @@ class App {
           } else {
             // No match on tap (released without matching): play the click
             // sound and show the same-pattern pulse as feedback.
+            this.streak = 0;
             this.sound.click();
-            const tappedPattern = this.core.inBounds(clickRc.r, clickRc.c) ? this.core.getGrid()[clickRc.r][clickRc.c] : 0;
             if (tappedPattern !== 0) this.view.triggerBounce(tappedPattern);
             this._finishAction();
           }
@@ -2188,6 +2527,7 @@ class App {
         if (this.view.pick) {
           this.picking = this.view.pick;
           this.busy = false;
+          this.sound.pick();
           dbg({ type: 'resolveDone', picking: true });
           return;
         }
@@ -2230,14 +2570,15 @@ class App {
   }
 
   _doPick(r, c, tr, tc) {
+    const pattern = this.core.getGrid()[r][c];
     const res = this.core.resolvePair(r, c, tr, tc);
     this.picking = null;
     this.view.pick = null;
     if (res.matched) {
-      this.sound.match();
       const cellPx = G.pitch;
       const ax = c * cellPx, ay = r * cellPx;
       const tp = this.view.gridToPixel(tr, tc);
+      this._registerMatch([{ r, c }, { r: tr, c: tc }], pattern);
       this.view.elimFlash = {
         t0: performance.now(),
         dur: 350,
@@ -2276,9 +2617,19 @@ class App {
   }
 
   checkWin() {
-    if (this.core.getPatternCount() === 0) {
-      document.getElementById('winOverlay').classList.remove('hidden');
-    }
+    if (this.core.getPatternCount() !== 0) return;
+    const secs = Math.max(0, Math.round((performance.now() - this.stats.t0) / 1000));
+    const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+    const ss = String(secs % 60).padStart(2, '0');
+    const extras = [];
+    if (this.stats.hints) extras.push(`提示 ×${this.stats.hints}`);
+    if (this.stats.undos) extras.push(`撤销 ×${this.stats.undos}`);
+    document.getElementById('winStats').textContent =
+      `用时 ${mm}:${ss} · 消除 ${this.stats.moves} 对` + (extras.length ? ' · ' + extras.join(' · ') : '');
+    this.sound.win();
+    this.vibrate([16, 40, 16, 40, 60]);
+    spawnConfetti(document.getElementById('winOverlay'));
+    document.getElementById('winOverlay').classList.remove('hidden');
   }
 
   undo() {
@@ -2287,6 +2638,8 @@ class App {
       return;
     }
     dbg({ type: 'undo' });
+    this.stats.undos++;
+    this.streak = 0;
     this.core.undo();
     // Reset any transient view/input state and repaint from the restored board.
     if (this.view) this.view._bumpToken();
@@ -2312,11 +2665,32 @@ class App {
     this.busy = false;
     this.press = null;
     this.picking = null;
+    this.streak = 0;
+    this.stats = this._freshStats();
     this.core.init();
     this.view = new RenderView(this.canvas, this.core);
     this._wireView(this.view);
     this.setMsg('');
     this.updateHud();
+  }
+}
+
+// DOM confetti for the win overlay: cheap one-shot CSS animation.
+function spawnConfetti(container) {
+  const colors = ['#ffd54f', '#ff8a65', '#4fc3f7', '#81c784', '#ba68c8', '#fff176'];
+  for (let i = 0; i < 30; i++) {
+    const p = document.createElement('div');
+    p.className = 'confetti';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.background = colors[i % colors.length];
+    p.style.width = (6 + Math.random() * 6) + 'px';
+    p.style.height = (8 + Math.random() * 8) + 'px';
+    p.style.borderRadius = Math.random() < 0.5 ? '50%' : '2px';
+    p.style.animationDuration = (1.6 + Math.random() * 1.6) + 's';
+    p.style.animationDelay = (Math.random() * 0.5) + 's';
+    p.style.setProperty('--drift', (Math.random() * 120 - 60) + 'px');
+    p.addEventListener('animationend', () => p.remove());
+    container.appendChild(p);
   }
 }
 
