@@ -1269,6 +1269,7 @@ window.GameCore = GameCore;
 // Dynamic board geometry, recomputed on every resize so the square board
 // always fits the viewport (mobile-first). All render/input math reads G.
 const G = { cell: 64, gap: 4, pitch: 68, size: 540, dpr: 1 };
+window.__G = G; // exposed for the Node test harness
 
 const DPR_CAP = 2.5; // cap backing-store density for mobile GPU/battery
 
