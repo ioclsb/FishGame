@@ -87,6 +87,16 @@
   #btnSound.muted .snd-on { display: none; }
   #btnSound.muted .snd-off { display: block; }
   #btnSound.muted { color: rgba(255,255,255,0.55); }
+  /* shuffle button nudges when the board has no remaining moves */
+  #controls button.attention {
+    animation: attnPulse 1.3s ease-in-out infinite;
+    background: rgba(255,213,79,0.28);
+    border-color: rgba(255,213,79,0.65);
+  }
+  @keyframes attnPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.09); }
+  }
   @media (max-width: 480px) {
     #controls button { width: 38px; height: 38px; }
     #controls button svg { width: 18px; height: 18px; }
@@ -2383,6 +2393,7 @@ class App {
   _bindControls() {
     document.getElementById('btnShuffle').addEventListener('click', () => {
       if (this.busy || this.core.getPatternCount() === 0) return;
+      const btnShuffle = document.getElementById('btnShuffle');
       this.busy = true;
       dbgStep();
       dbg({ type: 'shuffle', gridBefore: this.core.getGrid().map(r => r.join('')) });
@@ -2393,6 +2404,7 @@ class App {
       this.sound.ui();
       this.sound.shuffleSfx();
       this.vibrate(20);
+      btnShuffle.classList.remove('attention');
       this.view.render();
       this.updateHud();
       this.busy = false;
@@ -2605,9 +2617,7 @@ class App {
           return;
         }
         dbg({ type: 'resolveDone', gridRows: this.core.getGrid().map(r => r.join('')) });
-        this.busy = false;
-        this.updateHud();
-        this.checkWin();
+        this._finishAction();
       });
     };
     this.canvas.addEventListener('pointerup', endDrag);
@@ -2689,22 +2699,48 @@ class App {
     this.busy = false;
     this.updateHud();
     this.checkWin();
+    this.checkMovesLeft();
+  }
+
+  // After any board change: if no move can lead to an elimination, nudge the
+  // player toward the shuffle button (pulsing) instead of leaving them stuck.
+  checkMovesLeft() {
+    const btn = document.getElementById('btnShuffle');
+    const stuck = this.core.getPatternCount() > 0 && this.core.findHint() === null;
+    btn.classList.toggle('attention', stuck);
+    if (stuck) {
+      this.view.hint = null;
+      this.view.render();
+      this.setMsg('暂无可消组合，试试洗牌', 2600);
+    }
   }
 
   checkWin() {
     if (this.core.getPatternCount() !== 0) return;
     const secs = Math.max(0, Math.round((performance.now() - this.stats.t0) / 1000));
-    const mm = String(Math.floor(secs / 60)).padStart(2, '0');
-    const ss = String(secs % 60).padStart(2, '0');
+    const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
     const extras = [];
     if (this.stats.hints) extras.push(`提示 ×${this.stats.hints}`);
     if (this.stats.undos) extras.push(`撤销 ×${this.stats.undos}`);
+    // persistent best clear time
+    let best = null;
+    try { best = parseInt(localStorage.getItem('psm.bestTime'), 10) || null; } catch (e) {}
+    let recordTag = '';
+    if (!best || secs < best) {
+      best = secs;
+      try { localStorage.setItem('psm.bestTime', String(secs)); } catch (e) {}
+      recordTag = ' · 新纪录！';
+    } else {
+      extras.push(`最佳 ${fmt(best)}`);
+    }
     document.getElementById('winStats').textContent =
-      `用时 ${mm}:${ss} · 消除 ${this.stats.moves} 对` + (extras.length ? ' · ' + extras.join(' · ') : '');
+      `用时 ${fmt(secs)} · 消除 ${this.stats.moves} 对` +
+      (extras.length ? ' · ' + extras.join(' · ') : '') + recordTag;
     this.sound.win();
     this.vibrate([16, 40, 16, 40, 60]);
     spawnConfetti(document.getElementById('winOverlay'));
     document.getElementById('winOverlay').classList.remove('hidden');
+    document.getElementById('btnShuffle').classList.remove('attention');
   }
 
   undo() {
@@ -2730,6 +2766,7 @@ class App {
     this.view.render();
     this.busy = false;
     this.updateHud();
+    this.checkMovesLeft();
     this.setMsg('已撤销上一步');
   }
 
@@ -2745,6 +2782,7 @@ class App {
     this.core.init();
     this.view = new RenderView(this.canvas, this.core);
     this._wireView(this.view);
+    document.getElementById('btnShuffle').classList.remove('attention');
     this.setMsg('');
     this.updateHud();
   }

@@ -124,6 +124,11 @@ depend on it, never the reverse.
 |----------------|--------------------------------------|
 | `psm.sound`    | `'on'` / `'off'` sound preference    |
 | `psm.coached`  | `'1'` once the coach overlay is done |
+| `psm.bestTime` | fastest clear time, in seconds       |
+
+Deadlock handling: after every board change the app probes `findHint()`;
+when nothing can eliminate, the shuffle button pulses and a toast suggests
+reshuffling.
 
 ## 9. Debugging
 
