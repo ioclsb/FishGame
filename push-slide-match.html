@@ -1270,7 +1270,6 @@ window.GameCore = GameCore;
 // always fits the viewport (mobile-first). All render/input math reads G.
 const G = { cell: 64, gap: 4, pitch: 68, size: 540, dpr: 1 };
 window.__G = G; // exposed for the Node test harness
-
 const DPR_CAP = 2.5; // cap backing-store density for mobile GPU/battery
 
 // Fit a COLS x ROWS square board into the #boardWrap box. The cell pitch is
@@ -1283,12 +1282,14 @@ function computeLayout() {
   const availH = Math.max(160, wrap.clientHeight);
   let size = Math.floor(Math.min(availW, availH));
   const gap = Math.max(2, Math.round(size * 0.011));
-  const cell = Math.max(24, Math.floor((size - gap * (COLS - 1)) / COLS));
+  // 10px absolute floor: on absurdly small boxes, shrinking beats overflowing.
+  const cell = Math.max(10, Math.floor((size - gap * (COLS - 1)) / COLS));
   G.gap = gap;
   G.cell = cell;
   G.pitch = cell + gap;
   G.size = cell * COLS + gap * (COLS - 1);
 }
+window.__computeLayout = computeLayout; // exposed for the Node test harness
 
 // ================= ART: OCEAN THEME =================
 // Six sea-creature patterns. Each block is a procedurally painted glossy
@@ -1553,7 +1554,6 @@ class RenderView {
     this.hint = null;      // { blockId, dir, target }
     this.pick = null;      // { r, c, targets: [{r,c,dir},...] } multi-choice overlay
     this.bounce = null;    // { pattern, t0, dur } bounce animation for same-pattern blocks
-    this.onMatch = null;   // called on a successful drag elimination
     this.onRevert = null;  // called when a drag ends without a match
     this.hoverCell = null; // { r, c } under mouse (debug mode only)
     this.particles = [];   // match burst particles
@@ -2418,7 +2418,9 @@ class App {
       if (h) {
         this.view.hint = h;
         this.view.render();
-        this.setMsg('提示：推动该方块即可消除');
+        const hinted = this.core.getBlocks().find((b) => b.id === h.blockId);
+        const species = hinted ? PATTERN_NAMES[hinted.pattern - 1] : '';
+        this.setMsg(species ? `提示：推动${species}即可消除` : '提示：推动该方块即可消除');
       } else {
         this.view.hint = null;
         this.view.render();
