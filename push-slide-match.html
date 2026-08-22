@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0b2743">
+<meta name="description" content="深海主题的单文件益智小游戏：拖动推动方块，同款直线相对即配对消除，清空 24 对即通关。">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -2354,8 +2355,19 @@ class App {
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
     if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
-    // Suppress the long-press context menu on the board (mobile).
+    // Suppress the long-press context menu on the board (mobile) and any
+    // residual double-tap zoom (iOS sometimes ignores user-scalable=no).
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+    // In debug mode, capture uncaught errors into the structured log buffer.
+    if (DEBUG_ENABLED) {
+      window.addEventListener('error', (ev) => {
+        dbg({ type: 'windowError', msg: String(ev.message), line: ev.lineno, col: ev.colno });
+      });
+      window.addEventListener('unhandledrejection', (ev) => {
+        dbg({ type: 'unhandledRejection', reason: String(ev.reason) });
+      });
+    }
   }
 
   // Attach per-view callbacks. Called when the view is created or rebuilt
