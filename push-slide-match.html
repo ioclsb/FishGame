@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="推推消消乐">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%230d3556'/%3E%3Cpath d='M70 46 L93 30 Q86 49 93 69 L70 53 Z' fill='%23ff9a4d'/%3E%3Cellipse cx='47' cy='51' rx='28' ry='18' fill='%23f4772e'/%3E%3Cpath d='M33 35 Q39 32 43 35 L41 67 Q37 69 33 66 Z' fill='%23fff'/%3E%3Cpath d='M55 34 Q60 33 63 36 L62 66 Q58 68 54 66 Z' fill='%23fff' opacity='.92'/%3E%3Ccircle cx='28' cy='45' r='5.2' fill='%23fff'/%3E%3Ccircle cx='27' cy='46' r='2.6' fill='%2320242c'/%3E%3C/svg%3E">
 <title>推推消消乐</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -205,6 +206,14 @@
     transition: transform 0.08s ease, filter 0.15s ease;
   }
   #coachStart:active { transform: scale(0.95); filter: brightness(1.08); }
+  button:focus-visible, #winOverlay button:focus-visible {
+    outline: 3px solid #ffd54f; outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .confetti { display: none; }
+    #winOverlay, #winCard, #coach, #coachCard { animation: none; }
+    #progressFill { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -243,10 +252,10 @@
       </div>
     </div>
     <div id="boardWrap">
-      <canvas id="board"></canvas>
-      <div id="msg"></div>
+      <canvas id="board" role="application" aria-label="推推消消乐棋盘：8x8 方格，拖动方块滑动，同款直线相对即消除"></canvas>
+      <div id="msg" role="status" aria-live="polite"></div>
     </div>
-    <div id="coach" class="hidden">
+    <div id="coach" class="hidden" role="dialog" aria-modal="true" aria-label="玩法说明">
       <div id="coachCard">
         <div class="coachRow">
           <svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
@@ -259,7 +268,7 @@
         <button id="coachStart">开始游戏</button>
       </div>
     </div>
-    <div id="winOverlay" class="hidden">
+    <div id="winOverlay" class="hidden" role="dialog" aria-modal="true" aria-label="通关">
       <div id="winCard">
         <svg id="trophy" viewBox="0 0 64 64" aria-hidden="true">
           <defs>
@@ -288,6 +297,9 @@
 const DEBUG_ENABLED = new URLSearchParams(window.location.search).has('debug') ||
                       window.__FORCE_DEBUG === true;
 window.__DEBUG_ENABLED = DEBUG_ENABLED;
+// Honour the OS-level reduced-motion preference across canvas + DOM effects.
+const REDUCED_MOTION = typeof window.matchMedia === 'function' &&
+                       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 window.__LOGS = [];          // structured debug log ring buffer
 window.__LOG_SEQ = 0;
 window.__LOG_STEP = 0;       // increments on every user input/resolve event
@@ -1569,12 +1581,16 @@ class RenderView {
   _updateEffects(now) {
     const dt = Math.min(0.05, (now - this._lastT) / 1000);
     this._lastT = now;
-    // ambient bubbles rise with a gentle sway
-    if (!this.bubbles) this._initBubbles();
-    for (const b of this.bubbles) {
-      b.y -= b.sp * dt;
-      b.x += Math.sin(now * 0.0011 + b.ph) * 12 * dt;
-      if (b.y < -b.r * 2) { b.y = G.size + b.r * 2; b.x = Math.random() * G.size; }
+    // ambient bubbles rise with a gentle sway (skipped for reduced motion)
+    if (!REDUCED_MOTION) {
+      if (!this.bubbles) this._initBubbles();
+      for (const b of this.bubbles) {
+        b.y -= b.sp * dt;
+        b.x += Math.sin(now * 0.0011 + b.ph) * 12 * dt;
+        if (b.y < -b.r * 2) { b.y = G.size + b.r * 2; b.x = Math.random() * G.size; }
+      }
+    } else if (this.bubbles && this.bubbles.length) {
+      this.bubbles.length = 0;
     }
     // match particles: slight buoyancy then fade
     for (let i = this.particles.length - 1; i >= 0; i--) {
@@ -1935,6 +1951,7 @@ class RenderView {
   // Spawn a bubble burst + shockwave ring at a grid cell. Called for both
   // halves of an eliminated pair; power scales with the combo streak.
   matchBurst(r, c, pattern, power = 1) {
+    if (REDUCED_MOTION) return;
     const cx = c * G.pitch + G.cell / 2;
     const cy = r * G.pitch + G.cell / 2;
     const base = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
@@ -2677,6 +2694,7 @@ class App {
 
 // DOM confetti for the win overlay: cheap one-shot CSS animation.
 function spawnConfetti(container) {
+  if (REDUCED_MOTION) return;
   const colors = ['#ffd54f', '#ff8a65', '#4fc3f7', '#81c784', '#ba68c8', '#fff176'];
   for (let i = 0; i < 30; i++) {
     const p = document.createElement('div');
@@ -2696,8 +2714,56 @@ function spawnConfetti(container) {
 
 window.App = App;
 
+// ================= PWA / ICONS =================
+// Best-effort installability while staying a single file: bake a 512px PNG
+// icon at runtime, inject it as apple-touch-icon and reference it from a
+// blob-URL manifest. Works when served over http(s); harmless on file://.
+function ensurePwaIcons() {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 512, 512);
+    g.addColorStop(0, '#155073'); g.addColorStop(1, '#081f38');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    roundRectPath(ctx, 0, 0, 512, 512, 112);
+    ctx.fill();
+    for (const [bx, by, br] of [[90, 120, 16], [420, 380, 22], [400, 110, 12], [120, 400, 14]]) {
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(190,235,255,0.25)';
+      ctx.fill();
+    }
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 56, 56, 400, 400);
+      const png = c.toDataURL('image/png');
+      const touch = document.createElement('link');
+      touch.rel = 'apple-touch-icon';
+      touch.href = png;
+      document.head.appendChild(touch);
+      const manifest = {
+        name: '推推消消乐',
+        short_name: '消消乐',
+        display: 'standalone',
+        orientation: 'portrait',
+        background_color: '#0b2743',
+        theme_color: '#0b2743',
+        start_url: '.',
+        icons: [{ src: png, sizes: '512x512', type: 'image/png', purpose: 'any' }],
+      };
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
+      document.head.appendChild(link);
+    };
+    img.src = svgDataUri(creatureSvg(1));
+  } catch (e) { /* icons are best-effort */ }
+}
+
 // ================= START =================
 window.app = new App();
+ensurePwaIcons();
 </script>
 </body>
 </html>

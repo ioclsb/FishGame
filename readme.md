@@ -1,166 +1,146 @@
-# Push-Slide Match (推推消消乐) - Handoff / Handover Document
+# Push-Slide Match (推推消消乐) - Ocean Edition
 
-> **Read me first.** This directory (`C:\Users\arybin\Desktop\FishGame`) is now
-> the **active development target**. It currently contains only the game file
-> `push-slide-match.html` (the final, fully-verified version). All test scripts,
-> the Python/Playwright runtime, and the design docs still live in the original
-> workspace `C:\Users\arybin\Documents\Default Project` (see
-> [Handover / File map](#handover--file-map) below).
+A single-player puzzle game shipped as a **single-file HTML5 page**
+(`push-slide-match.html`). Double-click to run - no server, no build step,
+no external assets. UI text is Chinese; code identifiers are English.
 
----
+Mobile-first and production-oriented: responsive square board that fits any
+viewport, safe-area aware layout, device-pixel-ratio-crisp SVG artwork,
+synthesized audio, haptics, combo feedback, installability meta, and
+reduced-motion support.
 
-## 1. What this is
+## 1. How to play
 
-A single-player puzzle game shipped as a **single-file HTML5 Canvas page**
-(`push-slide-match.html`) - double-click to run, no server, no build step, no
-external assets. UI text is in Chinese; code identifiers are in English.
+- Push a block (or a chain of contiguous blocks) along one of four orthogonal
+  directions by dragging.
+- On release, the dragged block **A** ray-casts along its row/column. If the
+  first block hit in any direction has the same pattern (**B**), the pair is
+  eliminated. Otherwise the whole group smoothly reverts.
+- Tap a block directly to eliminate it when a same-pattern block already
+  faces it along a clear line.
+- When A can match in BOTH axes, a pick overlay highlights every target;
+  tap the one you want, or cancel to revert the slide.
+- Clear all 24 pairs (48 blocks, 6 sea-creature species) to win.
 
-The player pushes a block (or a chain of contiguous blocks) along one of four
-orthogonal directions. When released, the dragged block **A** is ray-cast along
-its row and column. If a same-pattern block **B** is the first block hit in any
-direction, the pair (A, B) is removed. If no match exists, the whole pushed
-group smoothly reverts to its pre-drag positions. The board has no permanent
-obstacle cells - any block acts as an obstacle, and empty cells provide sliding
-space.
+## 2. Running & verifying
 
-## 2. How to run
+```bash
+# open push-slide-match.html in any modern browser (double-click works)
 
-- Open `push-slide-match.html` in any modern browser (double-click).
-- Optional `?debug=1` URL flag enables the in-page debug overlay (grid values,
-  hover coordinates) and structured logging (see [Debugging](#7-debugging)).
+# core logic regression suite (no browser needed):
+node tests/run-core-tests.mjs          # all groups (~100+ assertions)
+node tests/run-core-tests.mjs undo     # single group by name
+```
+
+The page also embeds `window.runSelfTest(which)` asserting push-group
+construction, max slide distance, ray-cast elimination, revert restoration,
+shuffle empty-cell conservation, hint solvability, progress/win, multi-match
+detection, pair elimination, drag commit/revert, point-sliding, tap-to-match,
+ghost consistency, and single-step undo. `tests/run-core-tests.mjs` executes
+that suite inside a Node VM with browser stubs.
+
+Manual QA checklist (mobile):
+
+- [ ] Board fits width on 320px / 375px / 414px screens; no page scroll or bounce
+- [ ] Rotation re-fits the board; sprites/background rebake crisp at new DPR
+- [ ] Safe areas respected on notch devices (top/bottom padding)
+- [ ] No long-press context menu on the board; no double-tap zoom on buttons
+- [ ] Sound toggle persists across reloads; muted state shows slashed icon
+- [ ] First visit shows coach overlay once; "开始游戏" dismisses permanently
 
 ## 3. Architecture
 
 Four decoupled layers inside one page:
 
 ```
-App (assembly + HUD)
+App (assembly + HUD + game feel)
  ├─ GameCore          pure logic, no DOM/Canvas dependency
- │    Grid(8x8) + block list + pattern table
+ │    Grid(8x8) + block list + species table
  │    buildPushGroup / getMaxSlideDistance / checkMatch / resolve / revert
  │    shuffle / findHint / win detection / pushSnapshot / undo / resolvePair
  │    clickResolve / findMultiMatches / applySlide / revertSlide
- ├─ RenderView        Canvas 2D
- │    offscreen background layer + per-pattern block sprites
- │    drag follow / elimination line / revert / hint / pick overlay /
- │    same-pattern pulse (triggerBounce) / drag cross mask
+ ├─ RenderView        Canvas 2D, continuous rAF loop
+ │    baked deep-sea background (god rays, caustics, sand glow, vignette)
+ │    per-species sprites: procedural glossy candy tile + async SVG creature
+ │    drag follow / elimination beam / revert / hint / pick overlay /
+ │    same-pattern pulse / drag cross mask / particles + rings / ambient bubbles
  ├─ InputController   mouse + touch pointer events -> grid coords -> core
- └─ HUD               progress bar, win overlay, shuffle/hint/undo buttons
+ └─ HUD               progress ring + bar, frosted icon buttons, toast msg,
+                      win overlay (stats + confetti), first-run coach overlay
 ```
 
-`GameCore` exposes only plain data and functions; `RenderView` and
-`InputController` depend on it, never the reverse.
+`GameCore` exposes only plain data and functions; `RenderView` and input code
+depend on it, never the reverse.
 
 ## 4. Data model
 
-- `grid[8][8]`: value is pattern id, or `0` for empty. No dedicated obstacle
-  value; every block is a movement obstacle to other blocks.
+- `grid[8][8]`: value is species id 1..6, or `0` for empty. Every block is an
+  obstacle to other blocks; empty cells provide sliding space.
 - `blocks: [{ id, pattern, r, c }]`: block entity table; `grid` is the spatial
-  index kept in sync.
-- Board: 8x8, `CELL=64`, `GAP=4`, `BOARD_PX=540` (fits a ~900x950 viewport).
-- 6 patterns x 8 blocks = 48 blocks, 16 empty cells, `TOTAL_PAIRS = 24`.
-- Progress = `clearedPairs / totalPairs`. No refill, no gravity after
-  elimination. Board empties -> 100% -> win overlay.
+  index kept in sync (`consistencyCheck()` verifies).
+- 6 species x 8 blocks = 48 blocks, 16 empty cells, 24 pairs.
+- Progress = `clearedPairs / totalPairs`. No refill/gravity after elimination.
 
-## 5. Core algorithms
+## 5. Geometry & responsiveness
 
-- **Push group**: walk from A in the drag direction; every contiguous block
-  joins the group; A is the tail; blocks behind A stay put.
-- **Max slide distance**: count contiguous empty cells from the group's
-  leading edge in the current direction (rigid translation). Direction can flip
-  within a locked axis; group stays fixed.
-- **Match check**: from A's final position scan up/down/left/right, skipping
-  empty cells; first same-pattern block in any direction = match. `O(4x8)`.
-- **Success**: remove A and B only; other group members commit their
-  post-slide coordinates; `clearedPairs++`.
-- **Revert**: whole group animates back to pre-drag positions.
-- **Multi-choice**: if A matches 2+ targets across any rays
-  (`findMultiMatches` returns an array), open a PICKING overlay (dark mask +
-  yellow-highlighted targets) and let the player choose; click elsewhere
-  cancels (reverts the drag slide).
-- **Same-pattern pulse**: tapping and releasing a block with no match pulses
-  every same-pattern block (scale ~0.22 around each block's own center).
-- **Drag cross mask**: while dragging, a light-white cross always centers on
-  the dragged block's current row/column (`Math.floor` of center / cell pitch);
-  it advances only when the block center truly crosses into the next cell.
+- All board math reads the mutable `G = { cell, gap, pitch, size, dpr }`.
+- `computeLayout()` fits the square board into `#boardWrap`
+  (flex: 1 of a fixed-body column), snapping cells to whole pixels.
+- Backing store density capped at `DPR_CAP = 2.5`; canvas CSS size always
+  equals logical size so pointer math stays exact.
+- Sprites cache per `(pattern, cell, dpr)`, background rebuilds on relayout;
+  resize/orientationchange/visualViewport events are rAF-throttled.
 
-## 6. Completed features & bugfix history
+## 6. Art pipeline
 
-Everything below is implemented, regression-tested, and in the shipped file.
+- Species: 小丑鱼 clownfish, 蓝倒吊 blue tang, 绿海龟 turtle, 河豚 pufferfish,
+  紫水母 jellyfish, 小红蟹 crab (`PATTERN_NAMES`).
+- Each sprite = procedurally painted glossy rounded tile (gradients, bevel,
+  gloss, drop shadow - synchronous) with a hand-authored inline SVG creature
+  composited asynchronously via data-URI -> Image -> offscreen canvas.
+- Background bakes water gradient, god rays, caustic blobs, warm sand glow,
+  rounded translucent cell tiles and vignette into one cached bitmap.
+- Runtime-generated 512px PNG icon feeds apple-touch-icon + blob manifest
+  (`ensurePwaIcons()`); static SVG favicon sits in `<head>`.
 
-1. Core push-group / max-slide / ray-cast match / revert (copy-on-write).
-2. Ghost-block bugfix - resolve() now clears all surviving members' original
-   cells atomically before writing new cells (order-independent, no ghosts).
-3. Discrete-point sliding - snap to the cell under the cursor (clamped
-   1..maxDist); release short of the next cell's center reverts directly.
-4. Tap-to-match - a short tap (under the 6px threshold) eliminates a matching
-   pair directly (cross-gap, any direction).
-5. 8x8 square board + viewport fit (from 10x10).
-6. Multi-choice overlay - all match targets across all rays highlighted;
-   pick to eliminate in place or cancel to revert.
-7. Same-pattern pulse feedback (amplitude 0.22, decaying).
-8. Drag row/column cross mask that always follows the block's live cell.
-9. Bidirectional drag on a locked axis (direction flips, group fixed).
-10. Web Audio synth sound manager (no assets):
-    - click: only when a tap is released WITHOUT a match (pressing alone is
-      silent);
-    - match: any successful elimination (tap/drag/pick) - same sound for all;
-    - release: only when a DRAG ends without a match (revert);
-    - no sound on drag start or successful drag release.
-    - Sound callbacks are re-attached on restart (`App._wireView`) so they
-      survive a view rebuild.
-11. Single-step undo button ("撤销") - reverts the most recent elimination;
-    restores the dragged block to its ORIGINAL cell (snapshot taken before any
-    slide/overlay). Shuffle is intentionally not undoable.
+## 7. Game feel (juice)
 
-## 7. Verification
+- Continuous rAF loop drives effects; idles when `document.hidden`.
+- Eliminations: bubble particle bursts + shockwave rings at both removed
+  cells; power scales with combo streak.
+- Combo streak climbs a pentatonic scale (`SoundManager.COMBO_STEPS`) and
+  shows 连击 ×N toasts; reset on miss/revert/undo/shuffle/restart.
+- Web Audio synth: pluck match chimes, noise-sweep shuffle, descending
+  revert slide, soft miss blip, UI ticks, win arpeggio. Master-gain mute
+  persisted in `localStorage('psm.sound')`.
+- Haptics via `navigator.vibrate` (guarded) on match/pick/shuffle/win.
+- Win overlay: elapsed time, pairs cleared, hints/undos used, DOM confetti.
+- `prefers-reduced-motion` disables particles, bubbles, confetti and CSS
+  animations while keeping full functionality.
 
-The page embeds `window.runSelfTest(which)` asserting push-group construction,
-max slide distance, ray-cast elimination, revert restoration, shuffle empty-cell
-conservation, hint solvability, progress/win, multi-match detection, pair
-elimination, drag commit/revert, point-sliding, tap-to-match, ghost consistency,
-and single-step undo (tap + drag).
+## 8. Persistence
 
-Run the Playwright suite (Python 3.11 + Playwright in the repo runtime):
+| Key            | Meaning                              |
+|----------------|--------------------------------------|
+| `psm.sound`    | `'on'` / `'off'` sound preference    |
+| `psm.coached`  | `'1'` once the coach overlay is done |
 
-```
-& "C:\Users\arybin\Documents\Default Project\runtime\python\python.exe" tests/verify.py all
-```
+## 9. Debugging
 
-From `C:\Users\arybin\Documents\Default Project`. Latest result:
-**PASS** (100+ self-test checks + interaction).
+- `?debug=1` URL flag enables the in-page overlay (grid values, hover cell)
+  and structured logging into `window.__LOGS` via `dbg()`/`dbgStep()`.
+- `GameCore.consistencyCheck()` guards grid<->block agreement after every
+  mutation; results ride along in debug log entries.
 
-### Debugging
+## 10. Handover notes for the next developer
 
-- `?debug=1` flag; `window.__LOGS` structured buffer; `dbg()`/`dbgStep()`.
-- `tests/debug_session.py` - headful Chromium + CDP on port 9222.
-- `tests/debug_inspect.py --steps|--full-grid|--blocks|--consistency|--selftest|--tail|--filter` - live CDP query.
-- `tests/debug_reload.py` - reload + fresh game in the debug window.
-
-## Handover / File map
-
-| Path | Purpose |
-|------|---------|
-| `C:\Users\arybin\Desktop\FishGame\push-slide-match.html` | **The game (active dev target).** Final, fully-verified single-file page. |
-| `C:\Users\arybin\Documents\Default Project\tests\verify.py` | Playwright verification driver. |
-| `C:\Users\arybin\Documents\Default Project\tests\debug_*.py` | Debug session / inspect / reload scripts. |
-| `C:\Users\arybin\Documents\Default Project\runtime\python\python.exe` | Bundled Python 3.11 + Playwright runtime. |
-| `C:\Users\arybin\Documents\Default Project\docs\superpowers\specs\2026-08-20-push-slide-match-design.md` | Design spec (source of truth; kept in sync with every change). |
-| `C:\Users\arybin\Documents\Default Project\docs\superpowers\plans\2026-08-20-push-slide-match.md` | Original task-by-task implementation plan. |
-| `C:\Users\arybin\AppData\Local\Temp\opencode\sdd-push-slide-match\progress.md` | SDD execution ledger - full change/fix history with root causes. |
-| `C:\Users\arybin\AppData\Local\Temp\opencode\cdp_*.py` | Ad-hoc CDP end-to-end test scripts (sound, undo, mask, bidirectional, revert, etc.). |
-
-## Handover notes for the next developer
-
-- **This directory is now the dev target.** Continue editing
-  `push-slide-match.html` here. The test scripts and runtime are referenced
-  from `Default Project`; either run them there (paths above) or copy
-  `tests/` + `runtime/` next to the game if you want a self-contained FishGame.
-- The `GameCore` logic is fully unit-testable via `window.runSelfTest`; add new
-  self-test cases there and extend `tests/verify.py` if interaction is needed.
-- Keep the design spec in sync - it is the binding authority for behavior.
-- No git, no node; verification is Python + Playwright only.
-- When changing sound behavior, remember sound callbacks must be re-attached to
-  the view on restart (`App._wireView`).
-- Board geometry constants (`COLS/ROWS/CELL/GAP/TOTAL_PAIRS/HUD progress`) must
-  stay consistent with each other and with any self-test coordinate assumptions.
+- Everything lives in `push-slide-match.html`; keep it self-contained
+  (no external assets, no network calls beyond none).
+- Keep `GameCore` DOM-free; extend `selfTests` in-page and rerun
+  `node tests/run-core-tests.mjs` after every change. Assertion counts vary
+  between runs because the `group` test walks a random layout.
+- Geometry: never reintroduce hard-coded pixel constants; read from `G`.
+- Sound callbacks/effects are re-wired to each new RenderView in
+  `App._wireView` (called on construction and restart).
+- Undo restores the dragged block to its ORIGINAL cell (snapshot precedes
+  slide commit); shuffle is intentionally not undoable.
