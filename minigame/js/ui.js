@@ -131,6 +131,8 @@ class UI {
       return { zone: 'overlay', id: null }; // block board while coach is up
     }
     for (const b of this.buttons) {
+      // 已用尽的撤销/打乱/提示按钮本局失效：不命中，点击穿透到棋盘
+      if (b.id !== 'settings' && this.app.uiState.usedOnce && this.app.uiState.usedOnce[b.id]) continue;
       const dx = x - b.x, dy = y - b.y;
       if (dx * dx + dy * dy <= b.r * b.r) return { zone: 'button', id: b.id };
     }

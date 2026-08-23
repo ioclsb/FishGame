@@ -289,13 +289,11 @@ class App {
   _onButton(id) {
     if (id === 'undo') {
       if (this.busy) return;
-      if (this.uiState.usedOnce.undo) { this.setMsg('每局仅有一次使用机会', 1000, '#ffffff', true); return; }
       this.uiState.usedOnce.undo = true;
       this.sound.ui();
       this.undo();
     } else if (id === 'shuffle') {
       if (this.busy || this.core.getPatternCount() === 0) return;
-      if (this.uiState.usedOnce.shuffle) { this.setMsg('每局仅有一次使用机会', 1000, '#ffffff', true); return; }
       this.uiState.usedOnce.shuffle = true;
       this.busy = true;
       this.core.shuffle();
@@ -311,7 +309,6 @@ class App {
       this.busy = false;
     } else if (id === 'hint') {
       if (this.busy) return;
-      if (this.uiState.usedOnce.hint) { this.setMsg('每局仅有一次使用机会', 1000, '#ffffff', true); return; }
       this.uiState.usedOnce.hint = true;
       this.sound.ui();
       this.stats.hints++;
