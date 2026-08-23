@@ -157,7 +157,7 @@ class RenderView {
     ctx.save();
     ctx.translate(inset, inset);
     ctx.scale(size / 100, size / 100);
-    drawCreature(ctx, pattern);
+    drawCreature(ctx, pattern, PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length]);
     ctx.restore();
     return s;
   }

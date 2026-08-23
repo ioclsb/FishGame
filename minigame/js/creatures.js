@@ -309,7 +309,9 @@ function drawCrab(ctx) {
   ctx.strokeStyle = OUT; ctx.lineWidth = 2.4; ctx.stroke();
 }
 
-function drawCreature(ctx, pattern) {
+function drawCreature(ctx, pattern, color) {
+  // 注入按图案色提亮的填充，使 8–35 生物各自带颜色（原 1–7 用自己的渐变，不受影响）
+  BODY = color ? shade(color, 46) : '#eef4fb';
   switch (pattern) {
     case 1: drawClownfish(ctx); break;
     case 2: drawBlueTang(ctx); break;
@@ -375,7 +377,7 @@ function drawStarfish(ctx) {
   ctx.beginPath(); ctx.arc(cx + 4.5, cy - 2, 2.3, 0, Math.PI * 2); ctx.fill();
 }
 
-const BODY = '#eef4fb'; // 8–35 生物统一浅色填充，配深色描边，在任何 tile 底色上都清晰
+let BODY = '#eef4fb'; // 8–35 生物的填充色：由 drawCreature 按图案色提亮后注入，配深色描边
 function _outlineStroke(ctx) { ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke(); }
 function _eyes(ctx, x1, y1, x2, y2, r) {
   r = r || 3.2;
