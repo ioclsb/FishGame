@@ -317,7 +317,34 @@ function drawCreature(ctx, pattern) {
     case 4: drawPufferfish(ctx); break;
     case 5: drawJellyfish(ctx); break;
     case 6: drawCrab(ctx); break;
+    case 7: drawStarfish(ctx); break;
   }
+}
+
+function drawStarfish(ctx) {
+  const base = ctx.createLinearGradient(0, 18, 0, 84);
+  base.addColorStop(0, '#5fe0ef');
+  base.addColorStop(1, '#16bccb');
+  const cx = 50, cy = 52, R = 37, ri = 16, points = 5;
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const ang = -Math.PI / 2 + i * Math.PI / points;
+    const rad = (i % 2 === 0) ? R : ri;
+    const x = cx + Math.cos(ang) * rad;
+    const y = cy + Math.sin(ang) * rad;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = base; ctx.fill();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = OUT; ctx.stroke();
+  // 中央圆盘 + 斑点
+  ctx.beginPath(); ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+  ctx.fillStyle = shade('#16bccb', 34); ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = OUT; ctx.stroke();
+  // 眼睛
+  ctx.fillStyle = 'rgba(15,30,48,0.72)';
+  ctx.beginPath(); ctx.arc(cx - 4.5, cy - 2, 2.3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 4.5, cy - 2, 2.3, 0, Math.PI * 2); ctx.fill();
 }
 
 module.exports = { drawCreature, shade };

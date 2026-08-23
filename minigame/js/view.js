@@ -47,6 +47,7 @@ const PATTERN_COLORS = [
   '#f5b52e', // pufferfish     (yellow)
   '#8e5cf0', // jellyfish      (violet)
   '#ef4d3d', // crab           (red)
+  '#16bccb', // starfish       (cyan)
 ];
 
 function roundRectPath(ctx, x, y, w, h, r) {

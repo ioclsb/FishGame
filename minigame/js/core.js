@@ -8,9 +8,10 @@ const { G } = require('./globals.js');
 const DEBUG = G.__DEBUG_ENABLED === true;
 
 const COLS = 10, ROWS = 14;      // 竖屏 10x14 布局
-const PATTERNS = 6;              // pattern ids 1..6
-const BLOCKS_PER_PATTERN = 18;   // 6 * 18 = 108 blocks, 32 empty on 10x14
-const TOTAL_PAIRS = (PATTERNS * BLOCKS_PER_PATTERN) / 2; // 54
+const PATTERN_COUNTS = [18, 18, 18, 18, 18, 18, 32]; // 图案 1..7 各自数量，和=140（铺满棋盘）
+const PATTERNS = PATTERN_COUNTS.length;              // 7
+const TOTAL_BLOCKS = PATTERN_COUNTS.reduce((a, b) => a + b, 0); // 140
+const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 70
 
 class GameCore {
   constructor() {
@@ -37,21 +38,16 @@ class GameCore {
     this.nextId = 1;
     this.undoSnapshot = null;   // a fresh board has no undo history
 
-    const cells = [];
+    let bi = 0;
+    const bag = [];
+    PATTERN_COUNTS.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(i + 1); });
+    this._shuffleArray(bag);
     for (let r = 0; r < ROWS; r++)
-      for (let c = 0; c < COLS; c++)
-        cells.push([r, c]);
-    this._shuffleArray(cells);
-
-    let used = 0;
-    const totalBlocks = PATTERNS * BLOCKS_PER_PATTERN;
-    for (const [r, c] of cells) {
-      if (used >= totalBlocks) break;
-      const pattern = 1 + (used % PATTERNS);
-      this.grid[r][c] = pattern;
-      this.blocks.push({ id: this.nextId++, pattern, r, c });
-      used++;
-    }
+      for (let c = 0; c < COLS; c++) {
+        const pattern = bag[bi++];
+        this.grid[r][c] = pattern;
+        this.blocks.push({ id: this.nextId++, pattern, r, c });
+      }
   }
 
   _shuffleArray(arr) {
@@ -437,16 +433,16 @@ const selfTests = {
     const checks = [];
     checks.push(c.getGrid().length === ROWS);
     checks.push(c.getGrid().every(row => row.length === COLS));
-    checks.push(c.getPatternCount() === PATTERNS * BLOCKS_PER_PATTERN);
+    checks.push(c.getPatternCount() === TOTAL_BLOCKS);
     checks.push(c.getTotalPairs() === TOTAL_PAIRS);
     let counts = new Array(PATTERNS + 1).fill(0);
     for (const b of c.getBlocks()) counts[b.pattern]++;
-    checks.push(counts.slice(1).every(n => n === BLOCKS_PER_PATTERN));
+    checks.push(counts.slice(1).every((n, i) => n === PATTERN_COUNTS[i]));
     let empty = 0;
     for (let r = 0; r < ROWS; r++)
       for (let col = 0; col < COLS; col++)
         if (c.getGrid()[r][col] === 0) empty++;
-    checks.push(empty === COLS * ROWS - PATTERNS * BLOCKS_PER_PATTERN);
+    checks.push(empty === COLS * ROWS - TOTAL_BLOCKS);
     return checks;
   },
 
@@ -530,8 +526,8 @@ const selfTests = {
     const h = c.findHint();
     checks.push(h !== null);
     if (h) {
-      checks.push(typeof h.blockId === 'number' && typeof h.dir === 'string');
-      checks.push(h.dist > 0);
+      checks.push(typeof h.blockId === 'number' && (h.dir === null || typeof h.dir === 'string'));
+      checks.push(h.dist >= 0);
       checks.push(h.target && typeof h.target.r === 'number' && typeof h.target.c === 'number');
     }
     return checks;
@@ -793,5 +789,5 @@ function runSelfTest(which = "all") {
 
 module.exports = {
   GameCore, selfTests, runSelfTest, coreWith,
-  ROWS, COLS, PATTERNS, BLOCKS_PER_PATTERN, TOTAL_PAIRS,
+  ROWS, COLS, PATTERNS, PATTERN_COUNTS, TOTAL_BLOCKS, TOTAL_PAIRS,
 };

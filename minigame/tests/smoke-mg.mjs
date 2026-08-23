@@ -113,7 +113,7 @@ listeners.touchEnd[0]();
 assert(app.uiState.coach === false, 'coach dismissed via start button');
 
 // Board invariants (10x14 layout).
-assert(app.core.getPatternCount() === 108, '108 blocks on the board');
+assert(app.core.getPatternCount() === 140, '140 blocks on the board (full)');
 assert(app.core.getGrid().length === 14, 'grid is 14 rows');
 assert(app.core.getGrid()[0].length === 10, 'grid is 10 columns');
 assert(Number.isFinite(app.boardRect.x) && Number.isFinite(app.boardRect.y) && app.boardRect.w > 0 && app.boardRect.h > 0,
@@ -184,7 +184,7 @@ listeners.touchEnd[0]();
 const restartBtn = app.ui.settingsRestartBtn;
 listeners.touchStart[0]({ touches: [{ identifier: 6, clientX: restartBtn.x + restartBtn.w / 2, clientY: restartBtn.y + restartBtn.h / 2 }] });
 listeners.touchEnd[0]();
-assert(app.core.getPatternCount() === 108, 'settings restart rebuilds a full board');
+assert(app.core.getPatternCount() === 140, 'settings restart rebuilds a full board');
 assert(app.uiState.settings === false, 'settings restart closes settings');
 
 // Bounce parity: tapping a block that cannot match fires the same-pattern
