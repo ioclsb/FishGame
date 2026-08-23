@@ -75,7 +75,7 @@ App (assembly + HUD + game feel)
  ├─ RenderView        Canvas 2D, continuous rAF loop
  │    baked deep-sea background (god rays, caustics, sand glow, vignette)
  │    per-species sprites: procedural glossy candy tile + async SVG creature
- │    drag follow / elimination beam / revert / hint / pick overlay /
+ │    drag follow / removal ghosts / revert / hint / pick overlay /
  │    same-pattern pulse / drag cross mask / particles + rings / ambient bubbles
  ├─ InputController   mouse + touch pointer events -> grid coords -> core
  └─ HUD               progress ring + bar, frosted icon buttons, toast msg,
@@ -143,8 +143,8 @@ depend on it, never the reverse.
   streak); real-timestamp animators are shifted across the freeze so every
   effect resumes exactly where it stopped.
 - **Choreography** (multimodal timing per platform haptics guidance): sound +
-  vibration fire together with the flash/ring; bubble particles pop +30ms;
-  praise words rise +110ms.
+  vibration fire together with the shockwave rings; bubble particles pop
+  +30ms; the combo floater rises +110ms.
 - **Screen shake**: only earned at combo x3+, tier-scaled amplitude/duration,
   decaying fast, skipped under reduced-motion.
 - **Praise floaters**: Candy-Crush-style escalation words (好极了→无与伦比)

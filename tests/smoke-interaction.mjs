@@ -327,7 +327,7 @@ const H = { app, flush, fire, el, centerPx };
   check('S9: eliminations accumulated', a.core.getClearedPairs() - beforePairs === 3);
 }
 
-// ---- Scenario 10: praise floater spawns on combo x2 --------------------------
+// ---- Scenario 10: combo floater replaces the toast at combo x2 ---------------
 {
   const a = app();
   a.restart(); flush(600);
@@ -335,8 +335,8 @@ const H = { app, flush, fire, el, centerPx };
   hintDrag(H);
   check('S10: floater exists at combo x2', a.view.floaters.length >= 1,
     `[${a.view.floaters.map((f) => f.text).join(',')}]`);
-  check('S10: word matches praise table',
-    a.view.floaters.length > 0 && a.view.floaters[0].text === sandbox.App.PRAISE[0]);
+  check('S10: floater shows the combo count',
+    a.view.floaters.length > 0 && a.view.floaters[0].text === '连击 ×2');
 }
 
 // ---- Scenario 11: streak survives long pauses (no time decay) ---------------
@@ -348,6 +348,31 @@ const H = { app, flush, fire, el, centerPx };
   flush(5000); // think about the next move for five whole seconds
   hintDrag(H);
   check('S11: streak continues after long pause', a.streak === 2, `got ${a.streak}`);
+}
+
+// ---- Scenario 12: edge floaters stay visible (incl. rise animation) ---------
+{
+  const a = app();
+  a.restart(); flush(600);
+  const s = G.size;
+  // spawn at all four extreme corners with a long label and big tier
+  const corners = [
+    [3, 3], [s - 3, 3], [3, s - 3], [s - 3, s - 3],
+  ];
+  for (const [x, y] of corners) {
+    a.view.floaters.push({ x, y, text: '连击 ×99', t: 0, life: 0.95, size: G.cell * 0.5 });
+  }
+  let worst = Infinity;
+  for (let i = 0; i < 57; i++) { // full life at ~60fps
+    flush(16.7);
+    for (const f of a.view.floaters) {
+      if (f.t >= f.life) continue;
+      const L = a.view._floaterLayout(f);
+      const distToEdge = Math.min(L.x, L.y, s - L.x, s - L.y);
+      worst = Math.min(worst, distToEdge);
+    }
+  }
+  check('S12: clamped floaters never leave the board', worst >= 6, `closest ${worst.toFixed(1)}px`);
 }
 
 console.log(failed === 0 ? 'SMOKE PASS' : `SMOKE FAIL (${failed})`);

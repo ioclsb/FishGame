@@ -292,7 +292,7 @@
           <rect x="18" y="44" width="28" height="8" rx="3" fill="url(#gold)"/>
           <circle cx="32" cy="17" r="4" fill="#fff" opacity="0.55"/>
         </svg>
-        <div id="winText">恭喜通关！</div>
+        <div id="winText">恭喜通关</div>
         <div id="winStats">全部配对完成</div>
         <button id="winRestart">再来一局</button>
       </div>
@@ -1622,7 +1622,7 @@ class RenderView {
     this.bg = null;
     this.drag = null;   // { group, dir, offsetPx, maxDist }
     this.revert = null; // { group, dir, offsetPx, fromPx }
-    this.elimFlash = null; // { t0, dur, pairs, removedIds }
+    this.elimFlash = null; // { t0, dur, ghosts, pattern, removedIds }
     this.hint = null;      // { blockId, dir, target }
     this.pick = null;      // { r, c, targets: [{r,c,dir},...] } multi-choice overlay
     this.bounce = null;    // { pattern, t0, dur } bounce animation for same-pattern blocks
@@ -1809,6 +1809,27 @@ class RenderView {
       life: 0.95,
       size: G.cell * (0.30 + 0.045 * Math.min(tier, 4)),
     });
+  }
+
+  // Full on-screen layout of a floater at its current age: pop-in scale,
+  // rise, and hard clamping so text + outline stay inside the board even
+  // when spawned at the edges (the rise animation included).
+  _floaterLayout(f) {
+    const p = Math.min(1, f.t / f.life);
+    const u = Math.min(1, p / 0.22) - 1;
+    const pop = Math.max(0.001, 1 + 2.7 * u * u * u + 1.7 * u * u); // ease-out-back
+    const size = Math.max(8, Math.round(f.size * pop));
+    const rise = -G.cell * 0.38 * p;
+    const lw = Math.max(3, G.cell * 0.07); // text outline width
+    this.ctx.font = `800 ${size}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
+    const tw = this.ctx.measureText(f.text).width;
+    const pad = G.cell * 0.05 + lw / 2;
+    const x = Math.min(Math.max(f.x, pad + tw / 2), G.size - pad - tw / 2);
+    const yTop = pad + size * 0.6;
+    const yBot = G.size - pad - size * 0.6;
+    const y = Math.min(Math.max(f.y + rise, yTop), Math.max(yTop, yBot));
+    const alpha = p < 0.65 ? 1 : Math.max(0, (1 - p) / 0.35);
+    return { x, y, size, alpha };
   }
 
   // Choreography helper: run fn once world-time reaches now+delayMs.
@@ -2015,14 +2036,6 @@ class RenderView {
 
     if (this.elimFlash) {
       const t = Math.min(1, (performance.now() - this.elimFlash.t0) / this.elimFlash.dur);
-      ctx.strokeStyle = `rgba(255,213,79,${0.9 * (1 - t)})`;
-      ctx.lineWidth = 5;
-      for (const [ax, ay, bx, by] of this.elimFlash.pairs) {
-        ctx.beginPath();
-        ctx.moveTo(ax + G.cell / 2, ay + G.cell / 2);
-        ctx.lineTo(bx + G.cell / 2, by + G.cell / 2);
-        ctx.stroke();
-      }
       // shrinking ghost of each removed tile sells the "pop"
       if (this.elimFlash.ghosts && this.elimFlash.pattern) {
         const spr = RenderView.spriteFor(this.elimFlash.pattern);
@@ -2146,23 +2159,21 @@ class RenderView {
       ctx.fill();
     }
 
-    // rising praise words (Candy-Crush style escalation)
+    // rising combo counter, hard-clamped to the visible board
     if (this.floaters.length) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      const lineW = Math.max(3, G.cell * 0.07);
       for (const f of this.floaters) {
-        const p = f.t / f.life;
-        const u = Math.min(1, p / 0.22) - 1; // ease-out-back pop-in
-        const pop = 1 + 2.7 * u * u * u + 1.7 * u * u;
-        const rise = -G.cell * 0.38 * p;
-        const y = f.y + rise;
-        ctx.globalAlpha = p < 0.65 ? 1 : Math.max(0, (1 - p) / 0.35);
-        ctx.font = `800 ${Math.max(8, Math.round(f.size * pop))}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
-        ctx.lineWidth = Math.max(3, G.cell * 0.07);
+        const L = this._floaterLayout(f);
+        if (L.alpha <= 0) continue;
+        ctx.globalAlpha = L.alpha;
+        ctx.font = `800 ${L.size}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
+        ctx.lineWidth = lineW;
         ctx.strokeStyle = 'rgba(6,18,34,0.8)';
-        ctx.strokeText(f.text, f.x, y);
+        ctx.strokeText(f.text, L.x, L.y);
         ctx.fillStyle = '#ffe27a';
-        ctx.fillText(f.text, f.x, y);
+        ctx.fillText(f.text, L.x, L.y);
       }
       ctx.globalAlpha = 1;
     }
@@ -2367,8 +2378,6 @@ class RenderView {
         this.elimFlash = {
           t0: performance.now(),
           dur: 350,
-          pairs: [[ax, ay, tp.x, tp.y]],
-          removedIds: res.removedIds,
           ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
           pattern: group[0].pattern,
         };
@@ -2692,12 +2701,9 @@ class App {
     view.onMatchFx = (fx) => { this._registerMatch(fx.cells, fx.pattern); };
   }
 
-  // Escalation words, Candy-Crush style. Index 0 = combo x2.
-  static PRAISE = ['好极了！', '太棒了！', '精彩！', '华丽！', '惊人！', '梦幻！', '无与伦比！'];
-
   // Unified successful-elimination hook: streak (broken only by a miss -
   // i.e. a tap whose global same-pattern bounce fires - or a failed drag),
-  // sound, haptics, hit-stop, choreographed FX and praise words.
+  // sound, haptics, hit-stop, choreographed FX and the combo floater.
   // Deliberately NO time decay: thinking between moves keeps the chain.
   _registerMatch(cells, pattern) {
     this.streak = (this.streak || 0) + 1;
@@ -2716,16 +2722,14 @@ class App {
     for (const cell of cells) v.matchBurst(cell.r, cell.c, pattern, power);
     // shake only when earned; tier grows with the streak
     v.addShake(streak - 2);
-    // praise word rises above the eliminated pair
+    // combo counter rises above the eliminated pair (replaces the old toast)
     if (streak >= 2) {
-      const word = App.PRAISE[Math.min(streak - 2, App.PRAISE.length - 1)];
       let mx = 0, my = 0;
       for (const c of cells) { mx += c.c; my += c.r; }
       const px = (mx / cells.length) * G.pitch + G.cell / 2;
       const py = (my / cells.length) * G.pitch - G.cell * 0.15;
-      v.schedule(110, () => v.spawnFloater(px, py, word, Math.min(streak - 1, 4)));
+      v.schedule(110, () => v.spawnFloater(px, py, `连击 ×${streak}`, Math.min(streak - 1, 4)));
     }
-    if (streak >= 2) this.setMsg(`连击 ×${streak}`, 950);
   }
 
   vibrate(msOrPattern) {
@@ -2931,8 +2935,6 @@ class App {
             this.view.elimFlash = {
               t0: performance.now(),
               dur: 350,
-              pairs: [[ax + G.cell / 2, ay + G.cell / 2, tp.x + G.cell / 2, tp.y + G.cell / 2]],
-              removedIds: res.removedIds,
               ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
               pattern: tappedPattern,
             };
@@ -3015,8 +3017,6 @@ class App {
       this.view.elimFlash = {
         t0: performance.now(),
         dur: 350,
-        pairs: [[ax + G.cell / 2, ay + G.cell / 2, tp.x + G.cell / 2, tp.y + G.cell / 2]],
-        removedIds: res.removedIds,
         ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
         pattern,
       };
