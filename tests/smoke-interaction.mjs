@@ -146,5 +146,23 @@ const DIRS = sandbox.GameCore.DIRS;
   }
 }
 
+// ---- Scenario 6: no rebake leak over long idle ------------------------------
+{
+  const a = app();
+  a.restart(); flush(600);
+  const s = sandbox.RenderView._stats;
+  const before = `${s.tiles}/${s.creatures}/${s.bgs}`;
+  flush(600 * 16.7); // ~10s idle at 60fps
+  const after = `${s.tiles}/${s.creatures}/${s.bgs}`;
+  check('S6: zero bakes across 600 idle frames', before === after, `${before} -> ${after}`);
+  check('S6: fps sampler alive', s.fps > 0 || s.frames >= 60);
+  // and a resize must NOT rebake when dimensions end up unchanged
+  const pre = `${s.tiles}/${s.creatures}/${s.bgs}`;
+  a.maybeRelayout(540, 540); // same box as the harness default
+  a.view.relayout();
+  const post = `${s.tiles}/${s.creatures}/${s.bgs}`;
+  check('S6: no-op relayout does not rebake sprites/bg', pre === post, `${pre} -> ${post}`);
+}
+
 console.log(failed === 0 ? 'SMOKE PASS' : `SMOKE FAIL (${failed})`);
 process.exit(failed === 0 ? 0 : 1);

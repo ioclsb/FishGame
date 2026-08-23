@@ -1273,13 +1273,16 @@ const DPR_CAP = 2.5; // cap backing-store density for mobile GPU/battery
 
 // Fit a COLS x ROWS square board into the #boardWrap box. The cell pitch is
 // snapped to whole pixels and the canvas CSS size equals the backing-store
-// logical size, so pointer math stays exact.
+// logical size, so pointer math stays exact. An absolute cap keeps huge
+// desktop monitors from inflating the canvas (and its GPU buffers).
+const BOARD_MAX_PX = 760;
+
 function computeLayout() {
   const wrap = document.getElementById('boardWrap');
   if (!wrap) return;
   const availW = Math.max(160, wrap.clientWidth);
   const availH = Math.max(160, wrap.clientHeight);
-  let size = Math.floor(Math.min(availW, availH));
+  let size = Math.floor(Math.min(availW, availH, BOARD_MAX_PX));
   const gap = Math.max(2, Math.round(size * 0.011));
   // 10px absolute floor: on absurdly small boxes, shrinking beats overflowing.
   const cell = Math.max(10, Math.floor((size - gap * (COLS - 1)) / COLS));
@@ -1462,8 +1465,14 @@ class RenderView {
     const key = pattern + '@' + G.cell + '@' + G.dpr;
     const cached = RenderView._sprites[key];
     if (cached) return cached.final || cached.base;
-    // Invalidate stale-size entries.
-    for (const k of Object.keys(RenderView._sprites)) delete RenderView._sprites[k];
+    // Purge ONLY entries baked for a stale geometry. Never wipe siblings:
+    // the render loop walks blocks pattern-by-pattern, so a full wipe here
+    // turned every frame into a full re-bake storm (canvas churn + SVG
+    // re-decodes) - the classic "memory climbs and everything lags" bug.
+    const geo = '@' + G.cell + '@' + G.dpr;
+    for (const k of Object.keys(RenderView._sprites)) {
+      if (!k.endsWith(geo)) delete RenderView._sprites[k];
+    }
     const base = RenderView._bakeTile(pattern);
     const entry = { base, final: null };
     RenderView._sprites[key] = entry;
@@ -1481,6 +1490,7 @@ class RenderView {
 
   // Glossy rounded-square candy tile in the pattern's hue.
   static _bakeTile(pattern) {
+    RenderView._stats.tiles++;
     const color = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
     const [s, ctx] = RenderView._tileCanvas();
     const S = G.cell;
@@ -1529,6 +1539,7 @@ class RenderView {
   // Rasterize the SVG creature onto a copy of the tile; swap it into the
   // cache entry once loaded and notify the view for a repaint.
   static _bakeCreature(pattern, key, entry) {
+    RenderView._stats.creatures++;
     const img = new Image();
     img.onload = () => {
       const [s, ctx] = RenderView._tileCanvas();
@@ -1537,6 +1548,10 @@ class RenderView {
       ctx.drawImage(img, inset, inset, G.cell - inset * 2, G.cell - inset * 2);
       entry.final = s;
       if (RenderView.onChange) RenderView.onChange();
+    };
+    img.onerror = () => {
+      // keep the plain tile; log once in debug mode
+      dbg({ type: 'spriteLoadError', pattern });
     };
     img.src = svgDataUri(creatureSvg(pattern));
   }
@@ -1580,7 +1595,18 @@ class RenderView {
       const view = RenderView._active;
       if (!view || document.hidden || RenderView._paused) return;
       view._updateEffects(performance.now());
+      // rolling frame-time sample for the debug overlay
       const t = performance.now();
+      if (lastRender > 0) {
+        const dt = t - lastRender;
+        const s = RenderView._stats;
+        s.frames++;
+        s.dtSum += dt;
+        if (s.frames % 60 === 0) {
+          s.fps = Math.round(1000 / Math.max(0.01, s.dtSum / 60));
+          s.dtSum = 0;
+        }
+      }
       if (view.isBusyFrame() || t - lastRender >= 33) {
         view.render();
         lastRender = t;
@@ -1682,6 +1708,7 @@ class RenderView {
   // Deep-sea scene baked once per geometry change: gradient water column,
   // light shafts, caustic glows, rounded cell tiles and an edge vignette.
   _buildBackground() {
+    if (RenderView._stats) RenderView._stats.bgs++;
     const bg = document.createElement('canvas');
     bg.width = G.size * this.dpr;
     bg.height = G.size * this.dpr;
@@ -1981,6 +2008,18 @@ class RenderView {
 
   _renderDebugOverlay() {
     const ctx = this.ctx;
+    // perf line: fps + bake counters (bakes must stay flat while playing)
+    const s = RenderView._stats || {};
+    ctx.save();
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(4, 4, 210, 16);
+    ctx.fillStyle = '#9fe8ff';
+    ctx.fillText(`fps:${s.fps || '-'} tiles:${s.tiles} svg:${s.creatures} bg:${s.bgs}`, 8, 7);
+    ctx.restore();
+
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.lineWidth = 1;
     ctx.font = '10px sans-serif';
@@ -2219,6 +2258,8 @@ class RenderView {
 }
 
 window.RenderView = RenderView;
+// Bake/loop instrumentation (debug overlay + regression tests).
+RenderView._stats = { tiles: 0, creatures: 0, bgs: 0, frames: 0, dtSum: 0, fps: 0 };
 window.runSelfTest = runSelfTest;
 
 // ================= SOUND (Web Audio synth, no assets) =================
@@ -2871,9 +2912,10 @@ function spawnConfetti(container) {
 window.App = App;
 
 // ================= PWA / ICONS =================
-// Best-effort installability while staying a single file: bake a 512px PNG
-// icon at runtime, inject it as apple-touch-icon and reference it from a
-// blob-URL manifest. Works when served over http(s); harmless on file://.
+// Bake a 512px PNG icon at runtime and inject it as apple-touch-icon
+// (data URI - no network). Deliberately NO manifest link: blob/data manifests
+// are best-effort at best, and any <link> resource risks keeping the tab's
+// loading indicator busy. The page is fully self-contained instead.
 function ensurePwaIcons() {
   try {
     const c = document.createElement('canvas');
@@ -2892,27 +2934,16 @@ function ensurePwaIcons() {
     }
     const img = new Image();
     img.onload = () => {
-      ctx.drawImage(img, 56, 56, 400, 400);
-      const png = c.toDataURL('image/png');
-      const touch = document.createElement('link');
-      touch.rel = 'apple-touch-icon';
-      touch.href = png;
-      document.head.appendChild(touch);
-      const manifest = {
-        name: '推推消消乐',
-        short_name: '消消乐',
-        display: 'standalone',
-        orientation: 'portrait',
-        background_color: '#0b2743',
-        theme_color: '#0b2743',
-        start_url: '.',
-        icons: [{ src: png, sizes: '512x512', type: 'image/png', purpose: 'any' }],
-      };
-      const link = document.createElement('link');
-      link.rel = 'manifest';
-      link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
-      document.head.appendChild(link);
+      try {
+        ctx.drawImage(img, 56, 56, 400, 400);
+        const png = c.toDataURL('image/png');
+        const touch = document.createElement('link');
+        touch.rel = 'apple-touch-icon';
+        touch.href = png;
+        document.head.appendChild(touch);
+      } catch (e) { /* icons are best-effort */ }
     };
+    img.onerror = () => { /* fall back to the SVG favicon in <head> */ };
     img.src = svgDataUri(creatureSvg(1));
   } catch (e) { /* icons are best-effort */ }
 }
