@@ -158,22 +158,10 @@ class SoundManager {
   match(combo = 1) {
     this._initOnFirstUse();
     const tier = SoundManager.tierForStreak(combo);
-    const f = SoundManager.MATCH_BASE;
-    this._click(0.05, 0.28 + 0.05 * tier, 3800, 0.8);
-    const tinks = 2 + tier;
-    for (let i = 0; i < tinks; i++) {
-      const base = f * (3.2 + Math.random() * 3.2);
-      this._tone(
-        base,
-        0.06 + Math.random() * 0.03,
-        'sine',
-        0.12 + Math.random() * 0.05,
-        i * 0.03 + Math.random() * 0.012,
-        base * 0.88,
-        Math.random() * 8 - 4,
-        0.0015
-      );
-    }
+    // 轻快灵动：明亮正弦上滑作主音，叠高八度点缀，连击再升一档
+    this._tone(740, 0.12, 'sine', 0.16, 0, 980, 0, 0.008);
+    this._tone(1100, 0.10, 'sine', 0.10, 0.05, 1320, 0, 0.008);
+    if (tier > 1) this._tone(1480, 0.09, 'sine', 0.08, 0.10, 1660);
   }
 
   release() {
@@ -213,7 +201,5 @@ class SoundManager {
     this._noise(0.5, 0.06, 6000, 11000, 0.33);
   }
 }
-
-SoundManager.MATCH_BASE = 659.25; // E5 anchor, tinks scatter ~3-6 octaves above
 
 module.exports = { SoundManager };

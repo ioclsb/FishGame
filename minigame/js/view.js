@@ -556,23 +556,16 @@ class RenderView {
 
     if (this.hint) {
       const b = this.core.getBlocks().find(x => x.id === this.hint.blockId);
-      const target = this.hint.target;
       if (b) {
-        const pulse = 0.65 + 0.35 * Math.sin(now * 0.006);
-        ctx.save();
-        ctx.globalAlpha = pulse;
-        ctx.strokeStyle = '#ffd54f';
-        ctx.lineWidth = 4;
-        ctx.setLineDash([9, 7]);
-        ctx.lineDashOffset = -(now * 0.03) % 16;
+        // 整盘蒙版遮蔽，仅被提示方块以白色发光高亮（无黄框无连线）
+        ctx.fillStyle = 'rgba(0,0,0,0.62)';
+        ctx.fillRect(0, 0, G.boardW, G.boardH);
+        const pulse = 1 + (REDUCED_MOTION ? 0 : 0.06 * Math.sin(now * 0.008));
         const p = this.gridToPixel(b.r, b.c);
-        ctx.strokeRect(p.x + 2, p.y + 2, G.cell - 4, G.cell - 4);
-        const tp = this.gridToPixel(target.r, target.c);
-        ctx.beginPath();
-        ctx.moveTo(p.x + G.cell / 2, p.y + G.cell / 2);
-        ctx.lineTo(tp.x + G.cell / 2, tp.y + G.cell / 2);
-        ctx.stroke();
-        ctx.strokeRect(tp.x + 2, tp.y + 2, G.cell - 4, G.cell - 4);
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,255,255,0.9)';
+        ctx.shadowBlur = 14;
+        this.drawBlock(b, p.x, p.y, pulse);
         ctx.restore();
       }
     }
@@ -591,9 +584,6 @@ class RenderView {
         ctx.shadowBlur = 14;
         this.drawBlock(this.core.getBlocks().find(b => b.r === t.r && b.c === t.c) || { pattern: this.core.getGrid()[t.r][t.c], r: t.r, c: t.c }, p.x, p.y, ts);
         ctx.restore();
-        ctx.strokeStyle = '#ffd54f';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(p.x + 2, p.y + 2, G.cell - 4, G.cell - 4);
       }
     }
     for (const g of this.rings) {

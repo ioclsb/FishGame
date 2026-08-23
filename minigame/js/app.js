@@ -270,9 +270,9 @@ class App {
     this.uiState.progress = { cleared: c, total: t, pct: (this.core.getProgress() * 100).toFixed(1) };
   }
 
-  setMsg(text, ttl = 2200) {
+  setMsg(text, ttl = 2200, color = '#ffd54f', plain = false) {
     if (!text) { this.uiState.msg = null; return; }
-    this.uiState.msg = { text, until: performance.now() + ttl };
+    this.uiState.msg = { text, until: performance.now() + ttl, color, plain, dur: ttl };
   }
 
   checkMovesLeft() {
@@ -289,12 +289,14 @@ class App {
   _onButton(id) {
     if (id === 'undo') {
       if (this.busy) return;
-      if (this.uiState.usedOnce.undo) { this.setMsg('撤销每局只能用一次'); return; }
+      if (this.uiState.usedOnce.undo) { this.setMsg('每局仅有一次使用机会', 1000, '#ffffff', true); return; }
+      this.uiState.usedOnce.undo = true;
       this.sound.ui();
       this.undo();
     } else if (id === 'shuffle') {
       if (this.busy || this.core.getPatternCount() === 0) return;
-      if (this.uiState.usedOnce.shuffle) { this.setMsg('打乱每局只能用一次'); return; }
+      if (this.uiState.usedOnce.shuffle) { this.setMsg('每局仅有一次使用机会', 1000, '#ffffff', true); return; }
+      this.uiState.usedOnce.shuffle = true;
       this.busy = true;
       this.core.shuffle();
       this.view.hint = null;
@@ -304,13 +306,13 @@ class App {
       this.sound.shuffleSfx();
       this.vibrate(20);
       this.uiState.stuck = false;
-      this.uiState.usedOnce.shuffle = true;
       this.view.render();
       this.updateHud();
       this.busy = false;
     } else if (id === 'hint') {
       if (this.busy) return;
-      if (this.uiState.usedOnce.hint) { this.setMsg('提示每局只能用一次'); return; }
+      if (this.uiState.usedOnce.hint) { this.setMsg('每局仅有一次使用机会', 1000, '#ffffff', true); return; }
+      this.uiState.usedOnce.hint = true;
       this.sound.ui();
       this.stats.hints++;
       const h = this.core.findHint();
@@ -321,7 +323,6 @@ class App {
         const species = hinted ? PATTERN_NAMES[hinted.pattern - 1] : '';
         const verb = h.dir === null ? '点击' : '推动';
         this.setMsg(species ? `提示：${verb}${species}即可消除` : `提示：${verb}该方块即可消除`);
-        this.uiState.usedOnce.hint = true;
       } else {
         this.view.hint = null;
         this.view.render();
@@ -600,7 +601,6 @@ class App {
     this.busy = false;
     this.updateHud();
     this.checkMovesLeft();
-    this.uiState.usedOnce.undo = true;
     this.setMsg('已撤销上一步');
   }
 

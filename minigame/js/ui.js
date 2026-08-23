@@ -14,12 +14,12 @@ const BTN_DEFS = [
   { id: 'settings', label: '设置' },
 ];
 
-// Card colors for the icon buttons — a blue close to the ocean backdrop.
+// Card colors for the icon buttons — a deep blue echoing the board water.
 const BTN_COLORS = {
-  undo: '#35759f',
-  shuffle: '#35759f',
-  hint: '#35759f',
-  settings: '#35759f',
+  undo: '#2b6b8f',
+  shuffle: '#2b6b8f',
+  hint: '#2b6b8f',
+  settings: '#2b6b8f',
 };
 
 class UI {
@@ -290,12 +290,12 @@ class UI {
     ctx.lineTo(-10, 5 + wag);
     ctx.lineTo(-6.5, 2.5);
     ctx.closePath();
-    ctx.fillStyle = '#ffb066';
+    ctx.fillStyle = '#f5b400';
     ctx.fill();
     // body
     ctx.beginPath();
     ctx.ellipse(0, 0, 7, 4.2, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#ff8a50';
+    ctx.fillStyle = '#ffce3a';
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.95)';
     ctx.lineWidth = 1.2;
@@ -585,25 +585,38 @@ class UI {
     const m = this.app.uiState.msg;
     if (!m || now >= m.until) return;
     const L = this.layout;
+    // 淡入淡出：前 180ms 淡入，末尾 220ms 淡出
+    const dur = m.dur || 2200;
+    const remain = m.until - now;
+    const elapsed = dur - remain;
+    let a = 1;
+    if (elapsed < 180) a = elapsed / 180;
+    else if (remain < 220) a = remain / 220;
+    a = Math.max(0, Math.min(1, a));
     ctx.save();
-    ctx.globalAlpha = Math.min(1, (m.until - now) / 300);
-    const size = 15;
-    ctx.font = `600 ${size}px sans-serif`;
-    const tw = ctx.measureText(m.text).width;
-    const w = tw + 32, h = 30;
-    const x = (L.width - w) / 2;
-    const y = L.board.y + L.board.h - h - 12;
-    ctx.beginPath();
-    roundRectPath(ctx, x, y, w, h, h / 2);
-    ctx.fillStyle = 'rgba(6,22,40,0.92)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = '#ffd54f';
+    ctx.globalAlpha = a;
+    ctx.font = '600 15px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(m.text, x + w / 2, y + h / 2 + 0.5);
+    if (m.plain) {
+      // 纯白文字，无底色框
+      ctx.fillStyle = m.color || '#ffffff';
+      ctx.fillText(m.text, L.width / 2, L.board.y + L.board.h - 24);
+    } else {
+      const tw = ctx.measureText(m.text).width;
+      const w = tw + 32, h = 30;
+      const x = (L.width - w) / 2;
+      const y = L.board.y + L.board.h - h - 12;
+      ctx.beginPath();
+      roundRectPath(ctx, x, y, w, h, h / 2);
+      ctx.fillStyle = 'rgba(6,22,40,0.92)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = m.color || '#ffd54f';
+      ctx.fillText(m.text, x + w / 2, y + h / 2 + 0.5);
+    }
     ctx.restore();
   }
 
