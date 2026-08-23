@@ -166,12 +166,23 @@ listeners.touchStart[0]({ touches: [{ identifier: 4, clientX: undoBtn.x, clientY
 listeners.touchEnd[0]();
 assert(true, 'undo button handled');
 
-// Restart via the settings panel rebuilds the board and closes settings.
-const restartRow = app.ui.settingsRows.restart;
+// Open settings, then test music toggle + restart (both inside the panel).
 listeners.touchStart[0]({ touches: [{ identifier: 5, clientX: sBtn.x, clientY: sBtn.y }] });
 listeners.touchEnd[0]();
-assert(app.uiState.settings === true, 'settings opens again for restart');
-listeners.touchStart[0]({ touches: [{ identifier: 6, clientX: restartRow.x + restartRow.w / 2, clientY: restartRow.y + restartRow.h / 2 }] });
+assert(app.uiState.settings === true, 'settings opens for music/restart');
+
+const musicRow = app.ui.settingsRows.music;
+assert(!!musicRow, 'settings music row laid out');
+const musicBefore = app.uiState.musicOn;
+listeners.touchStart[0]({ touches: [{ identifier: 9, clientX: musicRow.x + musicRow.w / 2, clientY: musicRow.y + musicRow.h / 2 }] });
+listeners.touchEnd[0]();
+assert(app.uiState.musicOn === !musicBefore, 'settings music row toggles');
+// restore
+listeners.touchStart[0]({ touches: [{ identifier: 9, clientX: musicRow.x + musicRow.w / 2, clientY: musicRow.y + musicRow.h / 2 }] });
+listeners.touchEnd[0]();
+
+const restartBtn = app.ui.settingsRestartBtn;
+listeners.touchStart[0]({ touches: [{ identifier: 6, clientX: restartBtn.x + restartBtn.w / 2, clientY: restartBtn.y + restartBtn.h / 2 }] });
 listeners.touchEnd[0]();
 assert(app.core.getPatternCount() === 108, 'settings restart rebuilds a full board');
 assert(app.uiState.settings === false, 'settings restart closes settings');

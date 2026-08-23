@@ -32,6 +32,7 @@ class UI {
     this.coachBtn = null;       // {x, y, w, h}
     this.winBtn = null;         // {x, y, w, h}
     this.settingsCloseBtn = null; // {x, y, w, h}
+    this.settingsRestartBtn = null; // {x, y, w, h}
     this.confetti = [];         // active confetti pieces
     this.fishX = 0;             // animated fish position along the bar
     this._lastT = 0;
@@ -90,10 +91,13 @@ class UI {
     this.settingsRows = {
       sound:   { x: rowX, y: c.y + 78, w: rowW, h: rowH },
       vibrate: { x: rowX, y: c.y + 126, w: rowW, h: rowH },
-      restart: { x: rowX, y: c.y + 174, w: rowW, h: rowH },
+      music:   { x: rowX, y: c.y + 174, w: rowW, h: rowH },
     };
-    const bw = 140, bh = 44;
-    this.settingsCloseBtn = { x: c.x + Math.round((cardW - bw) / 2), y: c.y + cardH - 64, w: bw, h: bh };
+    const bh = 44;
+    const gap = 12;
+    const bw = Math.round((rowW - gap) / 2);
+    this.settingsRestartBtn = { x: c.x + 20, y: c.y + cardH - 64, w: bw, h: bh };
+    this.settingsCloseBtn = { x: c.x + 20 + bw + gap, y: c.y + cardH - 64, w: bw, h: bh };
   }
 
   // ---- hit testing ------------------------------------------------------
@@ -103,12 +107,16 @@ class UI {
     if (this.app.settingsVisible()) {
       const rows = this.settingsRows;
       if (rows) {
-        for (const key of ['sound', 'vibrate', 'restart']) {
+        for (const key of ['sound', 'vibrate', 'music']) {
           const row = rows[key];
           if (row && x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) {
             return { zone: 'overlay', id: 'settings' + key.charAt(0).toUpperCase() + key.slice(1) };
           }
         }
+      }
+      if (this.settingsRestartBtn && x >= this.settingsRestartBtn.x && x <= this.settingsRestartBtn.x + this.settingsRestartBtn.w &&
+          y >= this.settingsRestartBtn.y && y <= this.settingsRestartBtn.y + this.settingsRestartBtn.h) {
+        return { zone: 'overlay', id: 'settingsRestart' };
       }
       if (this.settingsCloseBtn && x >= this.settingsCloseBtn.x && x <= this.settingsCloseBtn.x + this.settingsCloseBtn.w &&
           y >= this.settingsCloseBtn.y && y <= this.settingsCloseBtn.y + this.settingsCloseBtn.h) {
@@ -531,8 +539,22 @@ class UI {
     const s = this.app.uiState;
     this._drawSettingsRow(ctx, this.settingsRows.sound, '声音', null, !!s.soundOn);
     this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate);
-    this._drawSettingsRow(ctx, this.settingsRows.restart, '重开', '重新开始本关', null);
+    this._drawSettingsRow(ctx, this.settingsRows.music, '音乐', null, !!s.musicOn);
 
+    // 底部一排按钮：左“重开”、右“关闭”
+    const rb = this.settingsRestartBtn;
+    if (rb) {
+      ctx.beginPath();
+      roundRectPath(ctx, rb.x, rb.y, rb.w, rb.h, rb.h / 2);
+      const g1 = ctx.createLinearGradient(0, rb.y, 0, rb.y + rb.h);
+      g1.addColorStop(0, '#2f7fb0');
+      g1.addColorStop(1, '#1c5e87');
+      ctx.fillStyle = g1;
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 15px sans-serif';
+      ctx.fillText('重开', rb.x + rb.w / 2, rb.y + rb.h / 2 + 1);
+    }
     const b = this.settingsCloseBtn;
     if (b) {
       ctx.beginPath();

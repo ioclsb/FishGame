@@ -22,6 +22,7 @@ class SoundManager {
     this.master = null;
     this.comp = null;
     this.enabled = SoundManager.loadPref();
+    this.musicOn = SoundManager.loadMusicPref();
     this._unlocked = false;
     this.bgmGain = null;
     this.bgmWanted = false;
@@ -33,7 +34,7 @@ class SoundManager {
   unlock() {
     this._initOnFirstUse();
     this._silentUnlock();
-    if (this.enabled) this.startBgm();
+    if (this.musicOn) this.startBgm();
   }
 
   // wx.onShow resumes a suspended context (iOS).
@@ -41,7 +42,7 @@ class SoundManager {
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
-    if (this.enabled && this.bgmWanted) this.startBgm();
+    if (this.bgmWanted) this.startBgm();
   }
 
   _silentUnlock() {
@@ -63,6 +64,10 @@ class SoundManager {
     try { return storage.get('psm.sound') !== 'off'; } catch (e) { return true; }
   }
 
+  static loadMusicPref() {
+    try { return storage.get('psm.music') !== 'off'; } catch (e) { return true; }
+  }
+
   setEnabled(on) {
     this.enabled = on;
     try { storage.set('psm.sound', on ? 'on' : 'off'); } catch (e) {}
@@ -70,8 +75,13 @@ class SoundManager {
       this.master.gain.setTargetAtTime(on ? 0.5 : 0.0001, this.ctx.currentTime, 0.02);
     }
     if (on) this._initOnFirstUse();
-    if (on) { if (this.bgmWanted) this.startBgm(); }
-    else this.pauseBgm();
+  }
+
+  setMusic(on) {
+    this.musicOn = on;
+    try { storage.set('psm.music', on ? 'on' : 'off'); } catch (e) {}
+    if (on) this.startBgm();
+    else this.stopBgm();
   }
 
   _initOnFirstUse() {
@@ -171,12 +181,13 @@ class SoundManager {
   startBgm() {
     this._initOnFirstUse();
     this.bgmWanted = true;
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.musicOn) return;
     if (this._bgm && this._bgm.timer) return;
     if (!this.bgmGain) {
       this.bgmGain = this.ctx.createGain();
       this.bgmGain.gain.value = 0.2;
-      this.bgmGain.connect(this.master);
+      // 音乐走独立增益，接到 comp（主总线之后），不受音效静音影响
+      this.bgmGain.connect(this.comp);
     }
     const b = this._bgm = { step: 0, nextTime: this.ctx.currentTime + 0.12, timer: null };
     b.timer = setInterval(() => this._bgmSched(), 60);

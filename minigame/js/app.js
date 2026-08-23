@@ -63,6 +63,7 @@ class App {
     this.uiState = {
       progress: { cleared: 0, total: this.core.getTotalPairs(), pct: 0 },
       soundOn: this.sound.enabled,
+      musicOn: this.sound.musicOn,
       vibrate: this._loadVibrate(),
       stuck: false,
       msg: null,
@@ -346,6 +347,12 @@ class App {
     if (this.uiState.vibrate) this.vibrate(20);
   }
 
+  _toggleMusic() {
+    this.sound.setMusic(!this.sound.musicOn);
+    this.uiState.musicOn = this.sound.musicOn;
+    this.setMsg(this.sound.musicOn ? '音乐已开启' : '音乐已关闭', 1400);
+  }
+
   _maybeCoach() {
     let coached = false;
     try { coached = storage.get('psm.coached') === '1'; } catch (e) {}
@@ -390,6 +397,7 @@ class App {
         else if (hit.id === 'settingsClose') this.uiState.settings = false;
         else if (hit.id === 'settingsSound') this._toggleSound();
         else if (hit.id === 'settingsVibrate') this._toggleVibrate();
+        else if (hit.id === 'settingsMusic') this._toggleMusic();
         else if (hit.id === 'settingsRestart') {
           this.uiState.settings = false;
           this.restart();
