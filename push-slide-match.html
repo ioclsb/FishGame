@@ -659,17 +659,21 @@ class GameCore {
   // Move every member of a push group by `dist` cells in `dir`, updating both
   // blocks and grid (no elimination). Used to commit a drag to its snapped
   // position so the multi-choice overlay can resolve A in its real, final
-  // grid cell. Returns a list of { id, from:{r,c}, to:{r,c} } for the moved
-  // members so revertSlide can undo the move precisely.
+  // cell. Returns a list of { id, from:{r,c}, to:{r,c} } for revertSlide.
+  //
+  // Members are resolved to block references BY ID up front. Looking them up
+  // by coordinate mid-move is ambiguous for chained pushes (member N's
+  // destination can equal member N+1's origin), which silently corrupted the
+  // blocks table and made later multi-pick resolutions fail.
   applySlide(group, dir, dist) {
     const d = GameCore.DIRS[dir];
     const moved = [];
-    const orig = group.map(m => ({ id: m.id, r: m.r, c: m.c }));
-    for (const m of orig) this.grid[m.r][m.c] = 0;
-    for (const m of orig) {
-      const block = this.findBlockByPos(m.r, m.c);
+    const refs = group.map((m) => ({ m, block: this.blocks.find((b) => b.id === m.id) }));
+    for (const { m } of refs) this.grid[m.r][m.c] = 0;
+    for (const { m, block } of refs) {
       if (!block) continue;
-      const nr = m.r + d.dr * dist, nc = m.c + d.dc * dist;
+      const nr = m.r + d.dr * dist;
+      const nc = m.c + d.dc * dist;
       block.r = nr; block.c = nc;
       this.grid[nr][nc] = block.pattern;
       moved.push({ id: block.id, from: { r: m.r, c: m.c }, to: { r: nr, c: nc } });
@@ -1188,6 +1192,62 @@ const selfTests = {
     return checks;
   },
 
+  chainPick() {
+    // Regression: applySlide must move members BY ID. With a chained push
+    // (member N's destination == member N+1's origin), coordinate-based
+    // lookup re-captured an already-moved block, corrupting the blocks table
+    // so the subsequent multi-pick resolvePair silently failed.
+    const c = new GameCore();
+    const checks = [];
+    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c.blocks = [];
+    c.clearedPairs = 0;
+    c.nextId = 1;
+    // chain col4: A(4,4)p1 -> M1(3,4)p2 -> M2(2,4)p3, empties above
+    const mk = (r, cc, p) => { const b = { id: c.nextId++, pattern: p, r, c: cc }; c.grid[r][cc] = p; c.blocks.push(b); return b; };
+    const A = mk(4, 4, 1);
+    const M1 = mk(3, 4, 2);
+    const M2 = mk(2, 4, 3);
+    const B1 = mk(2, 6, 1);  // right target after commit (gap at (2,5))
+    mk(6, 4, 1);             // down target after commit (gaps above)
+
+    const group = c.getPushGroup(4, 4, 'up');
+    checks.push(group.length === 3);
+    const moved = c.applySlide(group, 'up', 2);
+
+    // blocks table must hold every member exactly once, at its precise cell
+    const byId = (id) => c.blocks.find((b) => b.id === id);
+    checks.push(byId(A.id).r === 2 && byId(A.id).c === 4 && byId(A.id).pattern === 1);
+    checks.push(byId(M1.id).r === 1 && byId(M1.id).c === 4 && byId(M1.id).pattern === 2);
+    checks.push(byId(M2.id).r === 0 && byId(M2.id).c === 4 && byId(M2.id).pattern === 3);
+    checks.push(moved.length === 3);
+    checks.push(c.consistencyCheck().length === 0);
+
+    // multi-choice appears at committed position; picking resolves cleanly
+    const multi = c.findMultiMatches(2, 4);
+    checks.push(Array.isArray(multi) && multi.length >= 2);
+    const t = multi.find((x) => x.r === 2 && x.c === 6) || multi[0];
+    const res = c.resolvePair(2, 4, t.r, t.c);
+    checks.push(res.matched === true);
+    checks.push(c.getClearedPairs() === 1);
+    checks.push(c.consistencyCheck().length === 0);
+    checks.push(c.findBlockByPos(M1.r, M1.c).pattern === 2); // survivors untouched
+
+    // apply/revert round-trip leaves zero diff on a fresh board
+    const c2 = new GameCore();
+    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    c2.blocks = [];
+    c2.clearedPairs = 0;
+    c2.nextId = 1;
+    [[4, 4, 1], [3, 4, 2], [2, 4, 3]].forEach(([r, cc, p]) => { c2.grid[r][cc] = p; c2.blocks.push({ id: c2.nextId++, pattern: p, r, c: cc }); });
+    const snapBefore = JSON.stringify({ g: c2.getGrid(), b: c2.getBlocks().map(b=>[b.id,b.r,b.c,b.pattern]) });
+    const mv2 = c2.applySlide(c2.getPushGroup(4, 4, 'up'), 'up', 2);
+    c2.revertSlide(mv2);
+    checks.push(JSON.stringify({ g: c2.getGrid(), b: c2.getBlocks().map(b=>[b.id,b.r,b.c,b.pattern]) }) === snapBefore);
+    checks.push(c2.consistencyCheck().length === 0);
+    return checks;
+  },
+
   undo() {
     const checks = [];
     // Single-step undo of a tap elimination. A(2,7)p5, B(0,7)p5, gap (1,7).
@@ -1269,7 +1329,7 @@ window.GameCore = GameCore;
 // always fits the viewport (mobile-first). All render/input math reads G.
 const G = { cell: 64, gap: 4, pitch: 68, size: 540, dpr: 1 };
 if (DEBUG_ENABLED) window.__G = G; // test-harness hook
-const DPR_CAP = 2.5; // cap backing-store density for mobile GPU/battery
+const DPR_CAP = 2; // industry sweet spot for mobile GPUs; biggest single lever
 
 // Fit a COLS x ROWS square board into the #boardWrap box. The cell pitch is
 // snapped to whole pixels and the canvas CSS size equals the backing-store
@@ -1458,25 +1518,19 @@ class RenderView {
   // geometry. The glossy tile paints synchronously; the SVG creature is
   // composited asynchronously and replaces the sprite when ready.
   static spriteFor(pattern) {
-    if (!RenderView._sprites) {
-      RenderView._sprites = {};
-      RenderView.onChange = null;
+    // Geometry bucket keyed by a single number (no per-frame string garbage).
+    // cell<=95 -> cell*16 fits in 4 bits-free range; dpr term stays < 16.
+    const geo = G.cell * 16 + Math.round(G.dpr * 4);
+    let bucket = RenderView._sprites;
+    if (!bucket || bucket.geo !== geo) {
+      RenderView._sprites = bucket = { geo, entries: {} };
+      RenderView.onChange = RenderView.onChange || null;
     }
-    const key = pattern + '@' + G.cell + '@' + G.dpr;
-    const cached = RenderView._sprites[key];
-    if (cached) return cached.final || cached.base;
-    // Purge ONLY entries baked for a stale geometry. Never wipe siblings:
-    // the render loop walks blocks pattern-by-pattern, so a full wipe here
-    // turned every frame into a full re-bake storm (canvas churn + SVG
-    // re-decodes) - the classic "memory climbs and everything lags" bug.
-    const geo = '@' + G.cell + '@' + G.dpr;
-    for (const k of Object.keys(RenderView._sprites)) {
-      if (!k.endsWith(geo)) delete RenderView._sprites[k];
-    }
+    const entry = bucket.entries[pattern];
+    if (entry) return entry.final || entry.base;
     const base = RenderView._bakeTile(pattern);
-    const entry = { base, final: null };
-    RenderView._sprites[key] = entry;
-    RenderView._bakeCreature(pattern, key, entry);
+    bucket.entries[pattern] = { base, final: null };
+    RenderView._bakeCreature(pattern, base);
     return base;
   }
 
@@ -1538,10 +1592,14 @@ class RenderView {
 
   // Rasterize the SVG creature onto a copy of the tile; swap it into the
   // cache entry once loaded and notify the view for a repaint.
-  static _bakeCreature(pattern, key, entry) {
+  static _bakeCreature(pattern, base) {
     RenderView._stats.creatures++;
     const img = new Image();
     img.onload = () => {
+      const bucket = RenderView._sprites;
+      if (!bucket) return; // geometry changed while decoding; entry is stale
+      const entry = bucket.entries[pattern];
+      if (!entry || entry.base !== base) return; // superseded
       const [s, ctx] = RenderView._tileCanvas();
       ctx.drawImage(entry.base, 0, 0, G.cell, G.cell);
       const inset = G.cell * 0.14;
@@ -1572,7 +1630,12 @@ class RenderView {
     this.hoverCell = null; // { r, c } under mouse (debug mode only)
     this.particles = [];   // match burst particles
     this.rings = [];       // shockwave rings
+    this.floaters = [];    // rising praise words
+    this.pendingFx = [];   // scheduled effect spawns ({at, fn})
     this.bubbles = null;   // ambient drifting bubbles (lazy init)
+    this.shake = null;     // impact screen shake {amp,t0,dur,seed}
+    this.freezeUntil = 0;  // hit-stop: world time stops until this timestamp
+    this._freezeStart = 0;
     this._lastT = performance.now();
     this.spawnT0 = performance.now(); // board entrance stagger origin
     this._animToken = 0;
@@ -1595,16 +1658,20 @@ class RenderView {
       const view = RenderView._active;
       if (!view || document.hidden || RenderView._paused) return;
       view._updateEffects(performance.now());
-      // rolling frame-time sample for the debug overlay
+      // rolling frame-time sample for the debug overlay (P95-aware)
       const t = performance.now();
       if (lastRender > 0) {
         const dt = t - lastRender;
         const s = RenderView._stats;
         s.frames++;
         s.dtSum += dt;
+        s.dts.push(dt);
+        if (s.dts.length > 300) s.dts.shift();
         if (s.frames % 60 === 0) {
           s.fps = Math.round(1000 / Math.max(0.01, s.dtSum / 60));
           s.dtSum = 0;
+          const sorted = s.dts.slice().sort((a, b) => a - b);
+          s.p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
         }
       }
       if (view.isBusyFrame() || t - lastRender >= 33) {
@@ -1648,7 +1715,27 @@ class RenderView {
 
   _updateEffects(now) {
     const dt = Math.min(0.05, (now - this._lastT) / 1000);
+    // ---- hit-stop: the world holds its breath, then everything shifts ----
+    if (this.freezeUntil > 0) {
+      if (now < this.freezeUntil) { this._lastT = now; return; }
+      const d = now - this._freezeStart;
+      if (d > 0) {
+        // shift real-timestamp animators so they resume where they froze
+        if (this.elimFlash) this.elimFlash.t0 += d;
+        if (this.bounce) this.bounce.t0 += d;
+        this.spawnT0 += d;
+      }
+      this.freezeUntil = 0;
+    }
     this._lastT = now;
+    // scheduled effect spawns (choreography delays)
+    for (let i = this.pendingFx.length - 1; i >= 0; i--) {
+      const p = this.pendingFx[i];
+      if (now >= p.at) {
+        this.pendingFx.splice(i, 1);
+        p.fn();
+      }
+    }
     // ambient bubbles rise with a gentle sway (skipped for reduced motion)
     if (!REDUCED_MOTION) {
       if (!this.bubbles) this._initBubbles();
@@ -1675,6 +1762,58 @@ class RenderView {
       g.t += dt;
       if (g.t >= g.dur) this.rings.splice(i, 1);
     }
+    // rising praise words
+    for (let i = this.floaters.length - 1; i >= 0; i--) {
+      const f = this.floaters[i];
+      f.t += dt;
+      if (f.t >= f.life) this.floaters.splice(i, 1);
+    }
+    if (this.shake && now >= this.shake.t0 + this.shake.dur) this.shake = null;
+  }
+
+  // ---- juice APIs -------------------------------------------------------
+  // Hit-stop: freeze the whole board for a few frames so the elimination
+  // lands with weight. Chained matches extend the hold.
+  hitStop(ms) {
+    const now = performance.now();
+    if (this.freezeUntil <= now) this._freezeStart = now;
+    this.freezeUntil = Math.max(this.freezeUntil, now + ms);
+  }
+
+  // Impact shake, tier-scaled. Only called for earned moments (combo>=3).
+  addShake(tier) {
+    if (REDUCED_MOTION || tier <= 0) return;
+    const t = Math.min(tier, 5);
+    this.shake = {
+      amp: G.cell * (0.016 + 0.013 * t),
+      t0: performance.now(),
+      dur: 150 + 45 * t,
+      seed: Math.random() * 100,
+    };
+  }
+
+  _shakeOffset(now) {
+    if (!this.shake) return null;
+    const s = this.shake;
+    const t = (now - s.t0) / s.dur;
+    if (t >= 1) { this.shake = null; return null; }
+    const k = s.amp * (1 - t) * (1 - t); // fast attack, decaying
+    return { x: k * Math.sin(s.seed + t * 42), y: k * Math.sin(s.seed * 1.7 + t * 51) };
+  }
+
+  spawnFloater(x, y, text, tier) {
+    if (REDUCED_MOTION) return;
+    this.floaters.push({
+      x, y, text,
+      t: 0,
+      life: 0.95,
+      size: G.cell * (0.30 + 0.045 * Math.min(tier, 4)),
+    });
+  }
+
+  // Choreography helper: run fn once world-time reaches now+delayMs.
+  schedule(delayMs, fn) {
+    this.pendingFx.push({ at: performance.now() + delayMs, fn });
   }
 
   // Recompute geometry from the current viewport and repaint. Sprites are
@@ -1818,6 +1957,9 @@ class RenderView {
     const ctx = this.ctx;
     const now = performance.now();
     ctx.clearRect(0, 0, G.size, G.size);
+    const shakeOff = this._shakeOffset(now);
+    ctx.save();
+    if (shakeOff) ctx.translate(shakeOff.x, shakeOff.y);
     ctx.drawImage(this.bg, 0, 0, G.size, G.size);
 
     // ambient bubbles drift behind the blocks
@@ -1983,7 +2125,8 @@ class RenderView {
     }
     // shockwave rings + particles on top of everything
     for (const g of this.rings) {
-      const t = g.t / g.dur;
+      if (g.t < 0) continue; // still waiting out its choreography delay
+      const t = Math.min(1, g.t / g.dur);
       ctx.beginPath();
       ctx.arc(g.x, g.y, g.maxR * (0.2 + 0.8 * t), 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(255,255,255,${(0.5 * (1 - t)).toFixed(3)})`;
@@ -2003,6 +2146,29 @@ class RenderView {
       ctx.fill();
     }
 
+    // rising praise words (Candy-Crush style escalation)
+    if (this.floaters.length) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const f of this.floaters) {
+        const p = f.t / f.life;
+        const u = Math.min(1, p / 0.22) - 1; // ease-out-back pop-in
+        const pop = 1 + 2.7 * u * u * u + 1.7 * u * u;
+        const rise = -G.cell * 0.38 * p;
+        const y = f.y + rise;
+        ctx.globalAlpha = p < 0.65 ? 1 : Math.max(0, (1 - p) / 0.35);
+        ctx.font = `800 ${Math.max(8, Math.round(f.size * pop))}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
+        ctx.lineWidth = Math.max(3, G.cell * 0.07);
+        ctx.strokeStyle = 'rgba(6,18,34,0.8)';
+        ctx.strokeText(f.text, f.x, y);
+        ctx.fillStyle = '#ffe27a';
+        ctx.fillText(f.text, f.x, y);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore(); // shake translate
+
     if (DEBUG_ENABLED) this._renderDebugOverlay();
   }
 
@@ -2015,9 +2181,9 @@ class RenderView {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(4, 4, 210, 16);
+    ctx.fillRect(4, 4, 250, 16);
     ctx.fillStyle = '#9fe8ff';
-    ctx.fillText(`fps:${s.fps || '-'} tiles:${s.tiles} svg:${s.creatures} bg:${s.bgs}`, 8, 7);
+    ctx.fillText(`fps:${s.fps || '-'} p95:${s.p95 ? Math.round(s.p95) : '-'}ms tiles:${s.tiles} svg:${s.creatures} bg:${s.bgs}`, 8, 7);
     ctx.restore();
 
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
@@ -2075,30 +2241,32 @@ class RenderView {
     });
   }
 
-  // Spawn a bubble burst + shockwave ring at a grid cell. Called for both
-  // halves of an eliminated pair; power scales with the combo streak.
-  matchBurst(r, c, pattern, power = 1) {
+  // Spawn a shockwave ring now + bubble burst after `delayMs` of world time
+  // (choreography: ring rides the flash, bubbles pop right after hit-stop).
+  matchBurst(r, c, pattern, power = 1, delayMs = 0) {
     if (REDUCED_MOTION) return;
     const cx = c * G.pitch + G.cell / 2;
     const cy = r * G.pitch + G.cell / 2;
-    const base = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
-    const palette = ['#ffffff', '#cfefff', shade(base, 70), base];
-    const n = Math.round(10 + 6 * Math.min(power, 3));
-    for (let i = 0; i < n; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const sp = (60 + Math.random() * 150) * (G.cell / 64) * (1 + 0.22 * Math.min(power, 3));
-      this.particles.push({
-        x: cx + (Math.random() - 0.5) * G.cell * 0.4,
-        y: cy + (Math.random() - 0.5) * G.cell * 0.4,
-        vx: Math.cos(ang) * sp,
-        vy: Math.sin(ang) * sp - 50 * (G.cell / 64),
-        r: G.cell * (0.05 + Math.random() * 0.085),
-        t: 0,
-        life: 0.45 + Math.random() * 0.45,
-        color: palette[Math.floor(Math.random() * palette.length)],
-      });
-    }
-    this.rings.push({ x: cx, y: cy, t: 0, dur: 0.38, maxR: G.cell * (0.85 + 0.15 * Math.min(power, 3)), color: base });
+    this.rings.push({ x: cx, y: cy, t: -delayMs / 1000, dur: 0.38, maxR: G.cell * (0.85 + 0.15 * Math.min(power, 3)), color: PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length] });
+    this.schedule(delayMs, () => {
+      const base = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
+      const palette = ['#ffffff', '#cfefff', shade(base, 70), base];
+      const n = Math.round(10 + 6 * Math.min(power, 3));
+      for (let i = 0; i < n; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const sp = (60 + Math.random() * 150) * (G.cell / 64) * (1 + 0.22 * Math.min(power, 3));
+        this.particles.push({
+          x: cx + (Math.random() - 0.5) * G.cell * 0.4,
+          y: cy + (Math.random() - 0.5) * G.cell * 0.4,
+          vx: Math.cos(ang) * sp,
+          vy: Math.sin(ang) * sp - 50 * (G.cell / 64),
+          r: G.cell * (0.05 + Math.random() * 0.085),
+          t: 0,
+          life: 0.45 + Math.random() * 0.45,
+          color: palette[Math.floor(Math.random() * palette.length)],
+        });
+      }
+    });
   }
 
   startDrag(group, dir, maxDist) {
@@ -2259,7 +2427,7 @@ class RenderView {
 
 window.RenderView = RenderView;
 // Bake/loop instrumentation (debug overlay + regression tests).
-RenderView._stats = { tiles: 0, creatures: 0, bgs: 0, frames: 0, dtSum: 0, fps: 0 };
+RenderView._stats = { tiles: 0, creatures: 0, bgs: 0, frames: 0, dtSum: 0, fps: 0, p95: 0, dts: [] };
 window.runSelfTest = runSelfTest;
 
 // ================= SOUND (Web Audio synth, no assets) =================
@@ -2270,7 +2438,33 @@ class SoundManager {
   constructor() {
     this.ctx = null;
     this.master = null;
+    this.comp = null;
     this.enabled = SoundManager.loadPref();
+    this._unlocked = false;
+    // Unlock on the first real gesture (iOS wants an actual playback inside
+    // a user gesture, not just a resume()).
+    document.addEventListener('pointerdown', () => {
+      this._initOnFirstUse();
+      this._silentUnlock();
+    }, { once: true });
+    // Coming back to the tab on iOS does not auto-resume a suspended context.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+    });
+  }
+
+  _silentUnlock() {
+    if (!this.ctx || !this.master || this._unlocked) return;
+    try {
+      const b = this.ctx.createBuffer(1, 1, 22050);
+      const src = this.ctx.createBufferSource();
+      src.buffer = b;
+      src.connect(this.master);
+      src.start(0);
+      this._unlocked = true;
+    } catch (e) { /* non-fatal */ }
   }
 
   static loadPref() {
@@ -2295,18 +2489,29 @@ class SoundManager {
       this.ctx = new AC();
       this.master = this.ctx.createGain();
       this.master.gain.value = this.enabled ? 0.5 : 0.0001;
-      this.master.connect(this.ctx.destination);
+      // Compressor before destination: games stack many one-shots with no
+      // normalization, so spikes clip. A gentle glue compressor is the
+      // standard fix (web.dev game-audio guidance).
+      this.comp = this.ctx.createDynamicsCompressor();
+      this.comp.threshold.value = -18;
+      this.comp.knee.value = 24;
+      this.comp.ratio.value = 6;
+      this.comp.attack.value = 0.003;
+      this.comp.release.value = 0.25;
+      this.master.connect(this.comp);
+      this.comp.connect(this.ctx.destination);
     } catch (e) { this.ctx = null; }
   }
 
   // Short tone with pluck envelope, routed through the master gain.
-  _tone(freq, dur, type, vol, when = 0, slideTo = null) {
+  _tone(freq, dur, type, vol, when = 0, slideTo = null, detuneCents = 0) {
     if (!this.enabled || !this.ctx) return;
     const t0 = this.ctx.currentTime + when;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
+    if (detuneCents) osc.detune.value = detuneCents;
     if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
     gain.gain.setValueAtTime(0.0001, t0);
     gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
@@ -2359,9 +2564,17 @@ class SoundManager {
   match(combo = 1) {
     this._initOnFirstUse();
     const f = SoundManager.noteForCombo(combo);
-    this._tone(f, 0.14, 'triangle', 0.34);
+    // ±5 cents of human detune keeps rapid repeats from sounding robotic
+    this._tone(f, 0.14, 'triangle', 0.34, 0, null, Math.random() * 10 - 5);
     this._tone(f * 2, 0.10, 'sine', 0.12, 0.02);
     this._noise(0.08, 0.05, 5000, 9000); // sparkle
+  }
+
+  // Milestone shimmer every 5 combo steps.
+  sparkle() {
+    this._initOnFirstUse();
+    [1318.5, 1567.98].forEach((f, i) => this._tone(f, 0.18, 'sine', 0.11, i * 0.06));
+    this._noise(0.12, 0.04, 7000, 12000);
   }
 
   release() {
@@ -2479,16 +2692,40 @@ class App {
     view.onMatchFx = (fx) => { this._registerMatch(fx.cells, fx.pattern); };
   }
 
-  // Unified successful-elimination hook: streak tracking, sound, haptics,
-  // particle bursts and combo toast. Cells are the removed grid coords.
+  // Escalation words, Candy-Crush style. Index 0 = combo x2.
+  static PRAISE = ['好极了！', '太棒了！', '精彩！', '华丽！', '惊人！', '梦幻！', '无与伦比！'];
+
+  // Unified successful-elimination hook: streak (broken only by a miss -
+  // i.e. a tap whose global same-pattern bounce fires - or a failed drag),
+  // sound, haptics, hit-stop, choreographed FX and praise words.
+  // Deliberately NO time decay: thinking between moves keeps the chain.
   _registerMatch(cells, pattern) {
     this.streak = (this.streak || 0) + 1;
+    const streak = this.streak;
     this.stats.moves++;
-    this.sound.match(this.streak);
+
+    // instant impact channel: sound + haptic together
+    this.sound.match(streak);
+    if (streak % 5 === 0) this.sound.sparkle();
     this.vibrate(14);
-    const power = Math.min(this.streak, 3);
-    for (const cell of cells) this.view.matchBurst(cell.r, cell.c, pattern, power);
-    if (this.streak >= 2) this.setMsg(`连击 ×${this.streak}`, 950);
+
+    const v = this.view;
+    const power = Math.min(streak, 3);
+    // hit-stop first: the board holds while the pair vanishes
+    v.hitStop(70 + 15 * Math.min(streak - 1, 3));
+    for (const cell of cells) v.matchBurst(cell.r, cell.c, pattern, power);
+    // shake only when earned; tier grows with the streak
+    v.addShake(streak - 2);
+    // praise word rises above the eliminated pair
+    if (streak >= 2) {
+      const word = App.PRAISE[Math.min(streak - 2, App.PRAISE.length - 1)];
+      let mx = 0, my = 0;
+      for (const c of cells) { mx += c.c; my += c.r; }
+      const px = (mx / cells.length) * G.pitch + G.cell / 2;
+      const py = (my / cells.length) * G.pitch - G.cell * 0.15;
+      v.schedule(110, () => v.spawnFloater(px, py, word, Math.min(streak - 1, 4)));
+    }
+    if (streak >= 2) this.setMsg(`连击 ×${streak}`, 950);
   }
 
   vibrate(msOrPattern) {

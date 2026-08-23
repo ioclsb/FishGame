@@ -15,6 +15,123 @@ function check(name, cond) {
 
 const DIRS = sandbox.GameCore.DIRS;
 
+// Under SMOKE_DEBUG, record every core mutation call so a missed drag can be
+// post-mortemed (inputs vs the pure-logic prediction).
+const coreLog = [];
+if (process.env.SMOKE_DEBUG) {
+  for (const name of ['resolve', 'clickResolve', 'resolvePair', 'applySlide', 'revertSlide']) {
+    const orig = sandbox.GameCore.prototype[name];
+    sandbox.GameCore.prototype[name] = function (...args) {
+      const t0 = performance.now();
+      let pre = '';
+      if (name === 'resolvePair') {
+        const [r, c, tr, tc] = args;
+        const ab = this.findBlockByPos(r, c);
+        const bb = this.findBlockByPos(tr, tc);
+        pre = JSON.stringify({
+          gridRC: this.grid[r][c], gridTC: this.grid[tr][tc],
+          aBlock: ab && { id: ab.id, p: ab.pattern }, bBlock: bb && { id: bb.id, p: bb.pattern },
+        });
+      }
+      const r = orig.apply(this, args);
+      coreLog.push([name,
+        `${Math.round(performance.now() - t0)}ms@${Math.round(t0)}`,
+        pre,
+        `cleared=${this.getClearedPairs()}`,
+        JSON.stringify(r && typeof r === 'object' ? { m: r.match ?? r.matched } : r)]);
+      if (coreLog.length > 12) coreLog.shift();
+      return r;
+    };
+  }
+}
+
+// Drive one hint-based drag match to completion (handles the legal
+// multi-choice overlay branch). `observe()` is sampled every frame during
+// the settle window so tests can catch transient states like shake.
+function steps(h, ms, observe) {
+  const n = Math.max(1, Math.ceil(ms / 16.7));
+  for (let i = 0; i < n; i++) { flush(16.7); if (observe) observe(); }
+}
+function hintDrag(h, observe) {
+  const a = h.app();
+  const hint = a.core.findHint();
+  if (!hint) return false;
+  const blk = a.core.getBlocks().find((b) => b.id === hint.blockId);
+  const d = DIRS[hint.dir];
+  const start = h.centerPx(blk.r, blk.c);
+  const end = {
+    x: start.x + d.dc * G.pitch * hint.dist,
+    y: start.y + d.dr * G.pitch * hint.dist,
+  };
+  fire(h.el('board'), 'pointerdown', { pointerId: 21, clientX: start.x, clientY: start.y });
+  const pdPress = a.press ? { r: a.press.r, c: a.press.c } : null;
+  steps(h, 20);
+  fire(h.el('board'), 'pointermove', { pointerId: 21, clientX: end.x, clientY: end.y });
+  const midState = {    press: !!a.press,
+    axis: a.press ? a.press.axis : null,
+    dir: a.press ? a.press.dir : null,
+    maxDist: a.press ? a.press.maxDist : null,
+    drag: !!a.view.drag,
+    busy: a.busy,
+  };
+  steps(h, 40);
+  fire(h.el('board'), 'pointerup', { pointerId: 21 });
+  // pure-logic prediction of the outcome straight from the live board
+  const predicted = a.core.simulateSlide(a.core.getPushGroup(blk.r, blk.c, hint.dir), hint.dir, hint.dist, (ar, ac, ov) => a.core.checkMatch(ar, ac, ov));
+  let sawPick = false;
+  const prevObs = observe;
+  const obs2 = () => { if (a.picking || a.view.pick) sawPick = true; if (prevObs) prevObs(); };
+  steps(h, 170, obs2); // snap tween; multi-choice may open here
+  const clrMid = a.core.getClearedPairs();
+  const gridMid = a.core.getGrid().map((r) => r.join('')).join('/');
+  if (a.picking) {
+    const t = a.picking.targets[0];
+    const tp = h.centerPx(t.r, t.c);
+    fire(h.el('board'), 'pointerdown', { pointerId: 22, clientX: tp.x, clientY: tp.y });
+  }
+  const clrBefore = a.core.getClearedPairs();
+  // full settle timeline: when does the pick overlay appear, when does the
+  // clear land, did we tap a target?
+  const tl = { pickOpenAt: -1, clearAt: -1, tapped: false };
+  let frameIdx = 0;
+  const prevObs2 = obs2;
+  const obs3 = () => {
+    frameIdx++;
+    if (tl.pickOpenAt < 0 && (a.picking || a.view.pick)) tl.pickOpenAt = frameIdx;
+    if (tl.clearAt < 0 && a.core.getClearedPairs() > clrBefore) tl.clearAt = frameIdx;
+    if (prevObs2) prevObs2();
+  };
+  steps(h, 170, obs3); // snap tween; multi-choice may open here
+  if (a.picking) {
+    tl.tapped = true;
+    const t = a.picking.targets[0];
+    const tp = h.centerPx(t.r, t.c);
+    fire(h.el('board'), 'pointerdown', { pointerId: 22, clientX: tp.x, clientY: tp.y });
+  }
+  steps(h, 750, obs3); // hit-stop + elim flash + completion
+  const expectedDelta = predicted ? 1 : 0;
+  if (process.env.SMOKE_DEBUG &&
+      (a.core.getClearedPairs() !== clrBefore + expectedDelta ||
+       (tl.pickOpenAt >= 0 && !tl.tapped))) {
+    console.error('DRAG-MISS', JSON.stringify({
+      hint: { dir: hint.dir, dist: hint.dist, blk: { r: blk.r, c: blk.c } },
+      predicted: predicted && { r: predicted.r, c: predicted.c },
+      midState, clrMid,
+      clearedNow: a.core.getClearedPairs(), tl,
+      streakEnd: a.streak,
+      gridNow: a.core.getGrid().map((r) => r.join('')).join('/'),
+    }));
+    for (const e of coreLog) console.error('   core:', e.join(' | '));
+    const logs = sandbox.__LOGS || [];
+    console.error('   page-log tail:');
+    for (const entry of logs.slice(-14)) {
+      console.error('    ', JSON.stringify(entry));
+    }
+  }
+  return true;
+}
+const H = { app, flush, fire, el, centerPx };
+
 // ---- Scenario 1: drag-to-match via a hint ---------------------------------
 {
   const a = app();
@@ -48,7 +165,7 @@ const DIRS = sandbox.GameCore.DIRS;
     fire(el('board'), 'pointerdown', { pointerId: 9, clientX: tp.x, clientY: tp.y });
     flush(600);
   }
-  flush(500); // elim flash (350ms) + completion
+  flush(900); // hit-stop + elim flash + completion
   check('S1: elimination applied', a.core.getClearedPairs() === 1);
   check('S1: two blocks removed', a.core.getPatternCount() === before - 2);
   check('S1: busy released', a.busy === false);
@@ -75,7 +192,7 @@ const DIRS = sandbox.GameCore.DIRS;
     const before = a.core.getPatternCount();
     fire(el('board'), 'pointerdown', { pointerId: 2, clientX: p.x, clientY: p.y });
     fire(el('board'), 'pointerup', { pointerId: 2 });
-    flush(500);
+    flush(900);
     check('S2: tap eliminated the pair', a.core.getClearedPairs() === 1);
     check('S2: blocks removed', a.core.getPatternCount() === before - 2);
     check('S2: busy released', a.busy === false);
@@ -100,7 +217,7 @@ const DIRS = sandbox.GameCore.DIRS;
     const p = centerPx(target.r, target.c);
     fire(el('board'), 'pointerdown', { pointerId: 3, clientX: p.x, clientY: p.y });
     fire(el('board'), 'pointerup', { pointerId: 3 });
-    flush(500);
+    flush(900);
     check('S3: undo available', a.core.canUndo());
     fire(el('btnUndo'), 'click');
     flush(50);
@@ -176,6 +293,61 @@ const DIRS = sandbox.GameCore.DIRS;
   const distinct = new Set(freqs).size;
   check('S7: rich variety', distinct >= 10, `${distinct} distinct over 60`);
   check('S7: deterministic ping-pong cycle', freqs[20] === freqs[20 + 18] && freqs[5] === freqs[5 + 18]);
+}
+
+// ---- Scenario 8: hit-stop engages on match and releases cleanly -------------
+{
+  const a = app();
+  a.restart(); flush(600);
+  let sawFreeze = false;
+  const obs = () => { if (a.view.freezeUntil > 0) sawFreeze = true; };
+  hintDrag(H, obs);
+  check('S8: hit-stop armed during elimination', sawFreeze);
+  check('S8: hit-stop released afterwards', a.view.freezeUntil === 0);
+  check('S8: match completed', a.core.getClearedPairs() >= 1 && a.busy === false);
+  // choreography fully delivered (particles/floaters may legally outlive it)
+  check('S8: effects scheduled all fired', a.view.pendingFx.length === 0);
+}
+
+// ---- Scenario 9: shake only when earned (combo>=3) ---------------------------
+{
+  const a = app();
+  a.restart(); flush(600);
+  const beforePairs = a.core.getClearedPairs();
+  let maxAmp = 0;
+  const obs = () => { if (a.view.shake) maxAmp = Math.max(maxAmp, a.view.shake.amp); };
+  hintDrag(H); // combo x1
+  check('S9: streak is 1 after first chain', a.streak === 1, `got ${a.streak}`);
+  hintDrag(H, obs); // quick second -> combo x2
+  check('S9: streak reached 2', a.streak === 2, `got ${a.streak}`);
+  check('S9: no shake at combo x2', maxAmp === 0);
+  hintDrag(H, obs); // third -> combo x3
+  check('S9: streak reached 3', a.streak === 3, `got ${a.streak}`);
+  check('S9: shake engaged at combo x3', maxAmp > 0, `amp=${maxAmp.toFixed(1)}`);
+  check('S9: eliminations accumulated', a.core.getClearedPairs() - beforePairs === 3);
+}
+
+// ---- Scenario 10: praise floater spawns on combo x2 --------------------------
+{
+  const a = app();
+  a.restart(); flush(600);
+  hintDrag(H);
+  hintDrag(H);
+  check('S10: floater exists at combo x2', a.view.floaters.length >= 1,
+    `[${a.view.floaters.map((f) => f.text).join(',')}]`);
+  check('S10: word matches praise table',
+    a.view.floaters.length > 0 && a.view.floaters[0].text === sandbox.App.PRAISE[0]);
+}
+
+// ---- Scenario 11: streak survives long pauses (no time decay) ---------------
+{
+  const a = app();
+  a.restart(); flush(600);
+  hintDrag(H);
+  check('S11: streak 1 before pause', a.streak === 1);
+  flush(5000); // think about the next move for five whole seconds
+  hintDrag(H);
+  check('S11: streak continues after long pause', a.streak === 2, `got ${a.streak}`);
 }
 
 console.log(failed === 0 ? 'SMOKE PASS' : `SMOKE FAIL (${failed})`);

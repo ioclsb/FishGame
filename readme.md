@@ -99,10 +99,13 @@ depend on it, never the reverse.
 - All board math reads the mutable `G = { cell, gap, pitch, size, dpr }`.
 - `computeLayout()` fits the square board into `#boardWrap`
   (flex: 1 of a fixed-body column), snapping cells to whole pixels.
-- Backing store density capped at `DPR_CAP = 2.5`; canvas CSS size always
+- Backing store density capped at `DPR_CAP = 2` (the biggest single mobile
+  GPU lever); canvas CSS size always
   equals logical size so pointer math stays exact.
-- Sprites cache per `(pattern, cell, dpr)`, background rebuilds on relayout;
-  resize/orientationchange/visualViewport events are debounced (120ms) and
+- Sprite cache is a numeric geometry bucket (`cell*16 + dpr*4`) - zero
+  string allocation in the per-frame lookup path; an absolute board cap
+  (`BOARD_MAX_PX = 760`) keeps giant desktop monitors sane.
+- resize/orientationchange/visualViewport events are debounced (120ms) and
   hysteresis-filtered (`maybeRelayout`, <24px jitter ignored) - this breaks
   the mobile URL-bar resize feedback storm. `resize()` itself is a no-op when
   dimensions did not change, so redundant events never re-allocate the
@@ -134,18 +137,34 @@ depend on it, never the reverse.
 
 ## 7. Game feel (juice)
 
-- Continuous rAF loop drives effects; idles when `document.hidden`.
-- Eliminations: bubble particle bursts + shockwave rings at both removed
-  cells; power scales with combo streak.
-- Combo streak climbs a pentatonic scale (`SoundManager.COMBO_STEPS`) and
-  shows 连击 ×N toasts; reset on miss/revert/undo/shuffle/restart.
+- Continuous rAF loop drives effects; idles cheaply when hidden and freezes
+  entirely under modal overlays (`RenderView.setPaused`).
+- **Hit-stop**: eliminations freeze the board for 70–115ms (scaling with the
+  streak); real-timestamp animators are shifted across the freeze so every
+  effect resumes exactly where it stopped.
+- **Choreography** (multimodal timing per platform haptics guidance): sound +
+  vibration fire together with the flash/ring; bubble particles pop +30ms;
+  praise words rise +110ms.
+- **Screen shake**: only earned at combo x3+, tier-scaled amplitude/duration,
+  decaying fast, skipped under reduced-motion.
+- **Praise floaters**: Candy-Crush-style escalation words (好极了→无与伦比)
+  pop in above the eliminated pair with an ease-out-back scale.
+- Combo streak climbs a pentatonic ping-pong ladder
+  (`SoundManager.noteForCombo`) - consecutive combos ALWAYS change pitch,
+  forever, inside a pleasant band - plus ±5 cents human detune and a
+  milestone shimmer every x5. The streak is miss-based, never time-based:
+  it continues across arbitrarily long thinking pauses and breaks only on
+  an actual miss (a tap whose global same-pattern bounce fires, or a
+  reverted drag) or on undo/shuffle/restart.
 - Web Audio synth: pluck match chimes, noise-sweep shuffle, descending
   revert slide, soft miss blip, UI ticks, win arpeggio. Master-gain mute
-  persisted in `localStorage('psm.sound')`.
+  persisted in `localStorage('psm.sound')`; a DynamicsCompressorNode guards
+  against clipping; first pointerdown performs the iOS silent-unlock; the
+  context auto-resumes when the tab becomes visible again.
 - Haptics via `navigator.vibrate` (guarded) on match/pick/shuffle/win.
 - Win overlay: elapsed time, pairs cleared, hints/undos used, DOM confetti.
-- `prefers-reduced-motion` disables particles, bubbles, confetti and CSS
-  animations while keeping full functionality.
+- `prefers-reduced-motion` disables particles, bubbles, confetti, shake,
+  floaters and CSS animations while keeping full functionality.
 
 ## 8. Persistence
 
@@ -161,8 +180,26 @@ reshuffling.
 
 ## 9. Debugging
 
-- `?debug=1` URL flag enables the in-page overlay (grid values, hover cell)
-  and structured logging into `window.__LOGS` via `dbg()`/`dbgStep()`.
+- `?debug=1` URL flag enables the in-page overlay (grid values, hover cell,
+  fps/P95 frame-time and bake counters) and structured logging into
+  `window.__LOGS` via `dbg()`/`dbgStep()`; uncaught errors are captured too.
+- `SMOKE_DEBUG=1 node tests/smoke-interaction.mjs` dumps a full per-drag
+  timeline (pick-open frame, clear frame, core mutation calls, grid states)
+  whenever a drag's outcome diverges from the pure-logic prediction.
+
+### Notable bugfix history
+
+- **Sprite cache wipe storm**: an early spriteFor() cleared the whole cache
+  on any miss; the per-block render loop then re-baked every tile + re-decoded
+  every SVG each frame (memory climb, jank, endless tab spinner). Cache is now
+  a numeric geometry bucket and S6 asserts bake counters stay flat.
+- **Resize feedback storm** on mobile: URL-bar toggling re-assigned
+  canvas.width (full buffer realloc) in a loop. Fixed with debounce +
+  hysteresis (`maybeRelayout`) + no-op resize guard.
+- **Chain-push corruption**: applySlide looked members up by coordinate
+  mid-move; chained pushes (member N destination == member N+1 origin)
+  re-captured moved blocks, corrupting blocks[] so later multi-pick picks
+  silently failed. Now moves by ID; guarded by embedded `chainPick` test.
 - `GameCore.consistencyCheck()` guards grid<->block agreement after every
   mutation; results ride along in debug log entries.
 

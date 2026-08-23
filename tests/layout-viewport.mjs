@@ -35,7 +35,7 @@ for (const [w, h, dpr, label] of CASES) {
   const fits = G.size <= Math.min(w, h) + 0.001;
   const cellOk = G.cell >= 10;
   const cssMatches = el('board').style.width === G.size + 'px';
-  const cap = Math.min(dpr, 2.5);
+  const cap = Math.min(dpr, 2);
   const backing = Math.abs(el('board').width - Math.round(G.size * cap)) < 0.01;
   check(`${label}: board fits`, fits, `${G.size}px vs box ${w}x${h}`);
   check(`${label}: cell size sane`, cellOk, `cell=${G.cell}`);
