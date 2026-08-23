@@ -1,0 +1,18 @@
+{
+  "description": "推推消消乐 - WeChat Mini Game port of push-slide-match.html",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": false,
+    "minified": false,
+    "newFeature": true,
+    "bigPackageSizeSupport": true,
+    "minifyWXML": true
+  },
+  "compileType": "game",
+  "libVersion": "3.8.3",
+  "appid": "wxdbc3429dae591e19",
+  "projectname": "鱼干游戏",
+  "miniprogramRoot": "./",
+  "condition": {}
+}
