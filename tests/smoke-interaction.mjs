@@ -164,5 +164,19 @@ const DIRS = sandbox.GameCore.DIRS;
   check('S6: no-op relayout does not rebake sprites/bg', pre === post, `${pre} -> ${post}`);
 }
 
+// ---- Scenario 7: combo pitch ladder evolves forever -------------------------
+{
+  const SM = sandbox.SoundManager;
+  const freqs = [];
+  for (let c = 1; c <= 60; c++) freqs.push(SM.noteForCombo(c));
+  check('S7: all notes finite & in band', freqs.every((f) => isFinite(f) && f >= 500 && f <= 1800),
+    `${Math.min(...freqs).toFixed(0)}-${Math.max(...freqs).toFixed(0)}Hz`);
+  check('S7: never static between consecutive combos',
+    freqs.every((f, i) => i === 0 || f !== freqs[i - 1]));
+  const distinct = new Set(freqs).size;
+  check('S7: rich variety', distinct >= 10, `${distinct} distinct over 60`);
+  check('S7: deterministic ping-pong cycle', freqs[20] === freqs[20 + 18] && freqs[5] === freqs[5 + 18]);
+}
+
 console.log(failed === 0 ? 'SMOKE PASS' : `SMOKE FAIL (${failed})`);
 process.exit(failed === 0 ? 0 : 1);
