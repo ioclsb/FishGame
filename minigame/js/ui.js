@@ -7,6 +7,10 @@
 const { roundRectPath, RenderView } = require('./view.js');
 const { shade } = require('./creatures.js');
 
+// 圆润字体栈（设备不支持圆体时回退到常规无衬线）
+const ROUND_FONT = "'Yuanti SC','YouYuan','PingFang SC','Microsoft YaHei',sans-serif";
+const rf = (weight, size) => `${weight} ${size}px ${ROUND_FONT}`;
+
 const BTN_DEFS = [
   { id: 'undo', label: '撤销' },
   { id: 'shuffle', label: '打乱' },
@@ -534,13 +538,13 @@ class UI {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(234,246,255,0.94)';
-    ctx.font = '700 17px sans-serif';
+    ctx.font = rf('700', 17);
     ctx.fillText('设置', c.x + c.w / 2, c.y + 42);
 
     const s = this.app.uiState;
-    this._drawSettingsRow(ctx, this.settingsRows.music, '音乐', null, !!s.musicOn);
-    this._drawSettingsRow(ctx, this.settingsRows.sound, '音效', null, !!s.soundOn);
-    this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate);
+    this._drawSettingsRow(ctx, this.settingsRows.music, '音乐', null, !!s.musicOn, 'music');
+    this._drawSettingsRow(ctx, this.settingsRows.sound, '音效', null, !!s.soundOn, 'sound');
+    this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate, 'vibrate');
 
     // 底部一排按钮：左“重新开始”、右“返回游戏”
     const rb = this.settingsRestartBtn;
@@ -565,12 +569,12 @@ class UI {
     g.addColorStop(1, pressed ? this._lighten(c1) : c1);
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '700 15px sans-serif';
-    ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
-    ctx.restore();
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = rf('700', 15);
+      ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+      ctx.restore();
   }
 
   _lighten(hex) {
@@ -582,22 +586,23 @@ class UI {
   }
 
   // One option row in the settings panel: label + (toggle switch | hint text).
-  _drawSettingsRow(ctx, row, label, hint, on) {
+  _drawSettingsRow(ctx, row, label, hint, on, icon) {
     if (!row) return;
     ctx.beginPath();
     roundRectPath(ctx, row.x, row.y, row.w, row.h, row.h / 2);
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     ctx.fill();
+    if (icon) this._drawRowIcon(ctx, icon, row.x + 22, row.y + row.h / 2, 20, 'rgba(234,246,255,0.94)');
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(234,246,255,0.94)';
-    ctx.font = '600 15px sans-serif';
-    ctx.fillText(label, row.x + 16, row.y + row.h / 2 + 0.5);
+    ctx.font = rf('600', 15);
+    ctx.fillText(label, row.x + 44, row.y + row.h / 2 + 0.5);
     if (on === null) {
       // action row (重开)
       ctx.textAlign = 'right';
       ctx.fillStyle = 'rgba(234,246,255,0.6)';
-      ctx.font = '500 12px sans-serif';
+      ctx.font = rf('500', 12);
       ctx.fillText(hint || '', row.x + row.w - 16, row.y + row.h / 2 + 0.5);
     } else {
       // toggle switch
@@ -614,6 +619,62 @@ class UI {
       ctx.fillStyle = '#fff';
       ctx.fill();
     }
+  }
+
+  // 设置行左侧小图标：music / sound / vibrate
+  _drawRowIcon(ctx, type, cx, cy, s, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    if (type === 'music') {
+      const r = s * 0.2;
+      ctx.beginPath();
+      ctx.ellipse(cx - s * 0.1, cy + s * 0.16, r, r * 0.78, -0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.04, cy + s * 0.1);
+      ctx.lineTo(cx + s * 0.04, cy - s * 0.34);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.04, cy - s * 0.34);
+      ctx.quadraticCurveTo(cx + s * 0.26, cy - s * 0.22, cx + s * 0.06, cy - s * 0.04);
+      ctx.stroke();
+    } else if (type === 'sound') {
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.3, cy - s * 0.1);
+      ctx.lineTo(cx - s * 0.12, cy - s * 0.1);
+      ctx.lineTo(cx + s * 0.05, cy - s * 0.28);
+      ctx.lineTo(cx + s * 0.05, cy + s * 0.28);
+      ctx.lineTo(cx - s * 0.12, cy + s * 0.1);
+      ctx.lineTo(cx - s * 0.3, cy + s * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx + s * 0.1, cy, s * 0.15, -0.7, 0.7);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + s * 0.1, cy, s * 0.28, -0.7, 0.7);
+      ctx.stroke();
+    } else if (type === 'vibrate') {
+      const w = s * 0.32, h = s * 0.58;
+      ctx.beginPath();
+      roundRectPath(ctx, cx - w / 2, cy - h / 2, w, h, s * 0.08);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - h * 0.22);
+      ctx.lineTo(cx, cy + h * 0.22);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - w / 2 - s * 0.14, cy - s * 0.14);
+      ctx.lineTo(cx - w / 2 - s * 0.2, cy + s * 0.14);
+      ctx.moveTo(cx + w / 2 + s * 0.14, cy - s * 0.14);
+      ctx.lineTo(cx + w / 2 + s * 0.2, cy + s * 0.14);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   _drawMsg(ctx, now) {
