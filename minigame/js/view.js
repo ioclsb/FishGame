@@ -578,13 +578,6 @@ class RenderView {
     if (this.pick) {
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
       ctx.fillRect(0, 0, G.size, G.size);
-      const pa = this.gridToPixel(this.pick.r, this.pick.c);
-      const ringR = G.cell * (0.55 + 0.05 * Math.sin(now * 0.008));
-      ctx.beginPath();
-      ctx.arc(pa.x + G.cell / 2, pa.y + G.cell / 2, ringR, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,213,79,0.9)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
       let ti = 0;
       for (const t of this.pick.targets) {
         if (!t) continue;
@@ -849,9 +842,12 @@ class RenderView {
   _animate(from, to, dur, tick, onDone) {
     const token = ++this._animToken;
     const t0 = performance.now();
-    const step = (now) => {
+    const step = () => {
       if (token !== this._animToken) return;
-      const t = Math.min(1, (now - t0) / dur);
+      // Use performance.now(), not the rAF callback argument: WeChat Mini Game
+      // rAF timestamps are not comparable to performance.now(), which made
+      // every timed animation complete on the first frame.
+      const t = Math.min(1, (performance.now() - t0) / dur);
       const e = 1 - (1 - t) * (1 - t);
       tick(from + (to - from) * e);
       if (t < 1) {
@@ -866,9 +862,9 @@ class RenderView {
   _animateUntil(dur, tick, onDone) {
     const token = ++this._animToken;
     const t0 = performance.now();
-    const step = (now) => {
+    const step = () => {
       if (token !== this._animToken) return;
-      const t = Math.min(1, (now - t0) / dur);
+      const t = Math.min(1, (performance.now() - t0) / dur);
       tick(t);
       if (t < 1) requestAnimationFrame(step);
       else onDone && onDone();

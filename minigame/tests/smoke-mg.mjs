@@ -94,8 +94,11 @@ assert(listeners.touchStart.length === 1, 'touch listeners registered');
 // Coach should be visible on first run (no stored flag).
 assert(app.uiState.coach === true, 'coach overlay shown on first run');
 
-// Pump ~40 frames (app._loop re-registers each frame).
+// Pump ~40 frames (app._loop re-registers each frame). Drive a controllable
+// clock so the view's animations (driven by performance.now()) advance in step
+// with the pumped rAF frames, matching how the app runs on a real device.
 let now = performance.now();
+globalThis.performance.now = () => now;
 for (let i = 0; i < 40; i++) {
   const q = rafQueue; rafQueue = [];
   for (const fn of q) { now += 16.7; fn(now); }
@@ -148,6 +151,61 @@ const restartBtn = app.ui.buttons[3];
 listeners.touchStart[0]({ touches: [{ identifier: 5, clientX: restartBtn.x, clientY: restartBtn.y }] });
 listeners.touchEnd[0]();
 assert(app.core.getPatternCount() === 48, 'restart rebuilds a full board');
+
+// Bounce parity: tapping a block that cannot match fires the same-pattern
+// pulse (web behavior), i.e. view.bounce is set and clears after the 450ms
+// animation. Search with the non-mutating checkMatch/findMultiMatches.
+let orphan = null;
+for (let r = 0; r < 8 && !orphan; r++) {
+  for (let c = 0; c < 8 && !orphan; c++) {
+    if (app.core.getGrid()[r][c] === 0) continue;
+    if (app.core.findMultiMatches(r, c)) continue;
+    if (app.core.checkMatch(r, c)) continue;
+    orphan = { r, c };
+  }
+}
+if (orphan) {
+  const ox = br.x + (orphan.c + 0.5) * (br.size / 8);
+  const oy = br.y + (orphan.r + 0.5) * (br.size / 8);
+  listeners.touchStart[0]({ touches: [{ identifier: 6, clientX: ox, clientY: oy }] });
+  listeners.touchEnd[0]();
+  assert(!!app.view.bounce, 'no-match tap triggers same-pattern bounce');
+  for (let i = 0; i < 40; i++) {
+    const q = rafQueue; rafQueue = [];
+    for (const fn of q) { now += 16.7; fn(now); }
+  }
+  assert(app.view.bounce === null, 'bounce animation completes and clears');
+} else {
+  console.log('  skip  no orphan cell on this board (bounce not asserted)');
+}
+
+// A MATCHING tap also fires the same-pattern pulse (hints the remaining
+// same-type blocks for chain planning), then it clears.
+let matchCell = null;
+for (let r = 0; r < 8 && !matchCell; r++) {
+  for (let c = 0; c < 8 && !matchCell; c++) {
+    if (app.core.getGrid()[r][c] === 0) continue;
+    if (app.core.findMultiMatches(r, c)) continue;
+    if (app.core.checkMatch(r, c)) matchCell = { r, c };
+  }
+}
+if (matchCell) {
+  const mx = br.x + (matchCell.c + 0.5) * (br.size / 8);
+  const my = br.y + (matchCell.r + 0.5) * (br.size / 8);
+  listeners.touchStart[0]({ touches: [{ identifier: 7, clientX: mx, clientY: my }] });
+  listeners.touchEnd[0]();
+  assert(!!app.view.bounce, 'matching tap also triggers same-pattern bounce');
+  for (let i = 0; i < 40; i++) {
+    const q = rafQueue; rafQueue = [];
+    for (const fn of q) { now += 16.7; fn(now); }
+  }
+  // playElimination bumps the anim token (cancelling the bounce rAF), so the
+  // pulse clears via render()'s real-time clock; here we just verify the
+  // elimination finished and the app returned to idle.
+  assert(app.busy === false, 'app responsive after matching tap + bounce');
+} else {
+  console.log('  skip  no matchable cell on this board (matching bounce not asserted)');
+}
 
 // Resize event.
 listeners.resize[0]();

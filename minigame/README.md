@@ -70,6 +70,22 @@ node minigame/tests/smoke-mg.mjs          # 集成冒烟
 
 网页版测试不受影响：`node tests/run-all.mjs`
 
+## 5.1 远程诊断采集（debug 模式）
+
+排查渲染/动画/输入类问题时可采集现场数据：
+
+1. 开发者工具「编译模式」加自定义条件 `debug=1` 启动
+2. 复现问题后**长按棋盘任意方块约 0.6 秒**（或控制台执行 `__captureDebug()`）
+3. 采集内容写入 storage（控制台 `wx.getStorageSync('__debugState')` 等读取）：
+   - `__debugState` — 棋盘/方块/视图状态 JSON（grid、blocks、view 的 bounce/drag/pick 等标志）
+   - `__debugLogs` — 最近结构化日志
+   - `__debugBoardPng` / `__debugScreenPng` — 棋盘/屏幕截图（jpg base64，可解码查看）
+4. 也可在控制台 `wx.getStorageSync('__runtimeError')` 查看运行时报错
+
+> 截图流程：`canvas.toTempFilePath` 生成临时文件 → `FileSystemManager.readFileSync(path, 'base64')`
+> 存入 storage，base64 可拷出解码。线上问题可用 `wx.getLogManager`（用户反馈上传）或
+> `wx.getRealtimeLogManager`（后台实时日志，真机生效）。
+
 ## 6. 与网页版的能力差异
 
 | 能力 | 网页版 | 小游戏版 |

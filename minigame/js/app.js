@@ -302,6 +302,14 @@ class App {
 
   onTouchStart(x, y) {
     this.sound.unlock();
+    if (DEBUG) {
+      // Debug long-press: holding a block ~0.6s captures state + screenshots.
+      clearTimeout(this._dbgTimer);
+      this._dbgTimer = setTimeout(() => {
+        this._dbgTimer = null;
+        GLOBAL.__captureDebug(this);
+      }, 600);
+    }
     if (this.busy) return;
 
     const hit = this.ui.hitTest(x, y);
@@ -334,6 +342,10 @@ class App {
       this.press = null;
       return;
     }
+    // Same-pattern breathing pulse the moment a block is touched, so it fires
+    // whether the touch becomes a tap or a drag (a finger often drifts past the
+    // 6px drag threshold, which would otherwise swallow the on-release pulse).
+    this.view.triggerBounce(this.core.getGrid()[r][c]);
     this.press = { r, c, startX: x, startY: y, axis: null, dir: null, group: null, maxDist: 0 };
   }
 
@@ -362,6 +374,8 @@ class App {
       this.press.group = group;
       this.press.maxDist = maxDist;
       this.view.startDrag(group, dir, maxDist);
+      clearTimeout(this._dbgTimer);
+      this._dbgTimer = null;
     }
 
     const curDir = this.press.axis === 'h' ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'down' : 'up');
@@ -376,6 +390,8 @@ class App {
   }
 
   onTouchEnd() {
+    clearTimeout(this._dbgTimer);
+    this._dbgTimer = null;
     if (!this.busy) return;
     const hadDrag = this.press && this.press.dir !== null;
     const clickRc = this.press ? { r: this.press.r, c: this.press.c } : null;
@@ -401,7 +417,6 @@ class App {
         } else {
           this.streak = 0;
           this.sound.click();
-          if (tappedPattern !== 0) this.view.triggerBounce(tappedPattern);
           this._finishAction();
         }
       } else {

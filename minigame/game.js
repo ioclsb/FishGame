@@ -36,7 +36,7 @@ setTimeout(() => {
       boardRect: app.boardRect,
       boardCanvas: [app.view.canvas.width, app.view.canvas.height],
       blocks: app.core.getPatternCount(),
-      bg: app.view.bg ? [app.view.bg.width, app.view.bg.height] : null,
+      bg: app.view.bbg ? [app.view.bg.width, app.view.bg.height] : null,
     }));
   } catch (e) {}
   try {
