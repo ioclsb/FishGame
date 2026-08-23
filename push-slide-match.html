@@ -2441,8 +2441,8 @@ window.runSelfTest = runSelfTest;
 
 // ================= SOUND (Web Audio synth, no assets) =================
 // All SFX are synthesized. A persistent master gain implements mute, and the
-// preference is stored in localStorage. Match chimes climb a pentatonic scale
-// with the combo streak so long chains feel rewarding.
+// preference is stored in localStorage. The match sound keeps a FIXED pitch
+// for a satisfying "pop", with three tiers of punch scaling on the streak.
 class SoundManager {
   constructor() {
     this.ctx = null;
@@ -2513,7 +2513,8 @@ class SoundManager {
   }
 
   // Short tone with pluck envelope, routed through the master gain.
-  _tone(freq, dur, type, vol, when = 0, slideTo = null, detuneCents = 0) {
+  // `atk` controls the attack time: faster = punchier front edge.
+  _tone(freq, dur, type, vol, when = 0, slideTo = null, detuneCents = 0, atk = 0.012) {
     if (!this.enabled || !this.ctx) return;
     const t0 = this.ctx.currentTime + when;
     const osc = this.ctx.createOscillator();
@@ -2523,11 +2524,35 @@ class SoundManager {
     if (detuneCents) osc.detune.value = detuneCents;
     if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(vol, t0 + atk);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(gain).connect(this.master);
     osc.start(t0);
     osc.stop(t0 + dur + 0.03);
+  }
+
+  // Crisp percussive transient: white noise with an exponential decay baked
+  // into the sample data, then band-passed. The baked edge is sharper than a
+  // gain envelope alone (kick/cajon synthesis practice).
+  _click(dur, vol, center, q, when = 0) {
+    if (!this.enabled || !this.ctx) return;
+    const t0 = this.ctx.currentTime + when;
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    const tau = Math.max(1, this.ctx.sampleRate * dur * 0.2);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / tau);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = center;
+    bp.Q.value = q;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(bp).connect(gain).connect(this.master);
+    src.start(t0);
   }
 
   _noise(dur, vol, fFrom, fTo, when = 0) {
@@ -2551,54 +2576,61 @@ class SoundManager {
     src.start(t0);
   }
 
-  // Combo pitch ladder: a C-major-pentatonic climb over two octaves, then
-  // ping-ponging back down WITHOUT repeating the end notes. Consecutive
-  // combos therefore always change pitch - forever - while staying inside a
-  // pleasant 523..1760 Hz band no matter how long the streak runs.
-  static COMBO_LADDER = (() => {
-    const penta = [0, 2, 4, 7, 9]; // major pentatonic semitones
-    const up = [];
-    for (let oct = 0; oct < 2; oct++) {
-      for (const d of penta) up.push(12 * oct + d);
-    }
-    const seq = up.concat(up.slice(1, -1).reverse());
-    return seq.map((s) => 523.25 * Math.pow(2, s / 12));
-  })();
+  // Fixed match anchor: the match SFX is a CLEAN glass break - one sharp
+  // broadband "crack" (the glass giving way) followed by a few DISTINCT high
+  // glass shard "tinks" (near-instant attack, slight downward pitch bend,
+  // fast decay, cleanly spaced so each one reads). Density scales with the
+  // streak; the character never climbs with the combo.
+  static MATCH_BASE = 659.25; // E5 - anchor, tinks scatter ~3-6 octaves above
 
-  static noteForCombo(combo) {
-    const i = Math.max(1, Math.floor(combo || 1)) - 1;
-    return SoundManager.COMBO_LADDER[i % SoundManager.COMBO_LADDER.length];
+  static tierForStreak(streak) {
+    return Math.min(Math.max(1, Math.floor(streak || 1)), 3);
   }
 
   match(combo = 1) {
     this._initOnFirstUse();
-    const f = SoundManager.noteForCombo(combo);
-    // ±5 cents of human detune keeps rapid repeats from sounding robotic
-    this._tone(f, 0.14, 'triangle', 0.34, 0, null, Math.random() * 10 - 5);
-    this._tone(f * 2, 0.10, 'sine', 0.12, 0.02);
-    this._noise(0.08, 0.05, 5000, 9000); // sparkle
-  }
-
-  // Milestone shimmer every 5 combo steps.
-  sparkle() {
-    this._initOnFirstUse();
-    [1318.5, 1567.98].forEach((f, i) => this._tone(f, 0.18, 'sine', 0.11, i * 0.06));
-    this._noise(0.12, 0.04, 7000, 12000);
+    const tier = SoundManager.tierForStreak(combo);
+    const f = SoundManager.MATCH_BASE;
+    // crack: the defining break - one sharp broadband noise snap (fast
+    // attack, quick baked decay). A single clean "crk!" is what reads as
+    // the glass giving way.
+    this._click(0.05, 0.28 + 0.05 * tier, 3800, 0.8);
+    // tinks: a FEW distinct glass shards, cleanly spaced (~30ms) so each one
+    // reads crisply. Near-instant attack, slight downward pitch bend, fast
+    // decay - struck-glass character, never a mush of overlapping tones.
+    const tinks = 2 + tier; // 3 / 4 / 5
+    for (let i = 0; i < tinks; i++) {
+      const base = f * (3.2 + Math.random() * 3.2); // ~2.1k-4.2k Hz
+      this._tone(
+        base,
+        0.06 + Math.random() * 0.03,
+        'sine',
+        0.12 + Math.random() * 0.05,
+        i * 0.03 + Math.random() * 0.012,
+        base * 0.88,
+        Math.random() * 8 - 4,
+        0.0015
+      );
+    }
   }
 
   release() {
     this._initOnFirstUse();
+    // gentle downward slide plus a soft noise whoosh sells the slide-back
     this._tone(420, 0.13, 'sine', 0.16, 0, 270);
+    this._noise(0.12, 0.05, 1600, 400);
   }
 
   click() {
     this._initOnFirstUse();
-    this._tone(320, 0.06, 'triangle', 0.14);
+    // soft low miss blip: clear "no match" without being harsh
+    this._tone(300, 0.08, 'sine', 0.12, 0, 210);
   }
 
   pick() {
     this._initOnFirstUse();
-    this._tone(700, 0.07, 'triangle', 0.22);
+    // quick rising bend + fast attack = lively grab
+    this._tone(620, 0.07, 'triangle', 0.20, 0, 800, 0, 0.004);
   }
 
   ui() {
@@ -2614,6 +2646,8 @@ class SoundManager {
 
   win() {
     this._initOnFirstUse();
+    // low C3 bass note grounds the arpeggio for a fuller finish
+    this._tone(130.81, 0.5, 'sine', 0.22, 0);
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
       this._tone(f, 0.22, 'triangle', 0.30, i * 0.11);
       this._tone(f * 2, 0.16, 'sine', 0.10, i * 0.11 + 0.03);
@@ -2622,7 +2656,7 @@ class SoundManager {
   }
 }
 
-window.SoundManager = SoundManager; // testable combo ladder
+window.SoundManager = SoundManager; // testable tier mapping
 
 // ================= INPUT CONTROLLER + APP =================
 class App {
@@ -2710,18 +2744,22 @@ class App {
     const streak = this.streak;
     this.stats.moves++;
 
-    // instant impact channel: sound + haptic together
-    this.sound.match(streak);
-    if (streak % 5 === 0) this.sound.sparkle();
+    // Punch tier: escalates 1 -> 2 -> 3 then LOCKS at the max for the rest of
+    // this streak. Sound, hit-stop, shake and particles all share the ceiling,
+    // so a long chain never grows past the strongest tier.
+    const tier = Math.min(streak, 3);
+
+    // instant impact channel: sound + haptic together. Combo >= 3 always
+    // plays the identical max-tier sound - no extra milestone layers.
+    this.sound.match(tier);
     this.vibrate(14);
 
     const v = this.view;
-    const power = Math.min(streak, 3);
     // hit-stop first: the board holds while the pair vanishes
-    v.hitStop(70 + 15 * Math.min(streak - 1, 3));
-    for (const cell of cells) v.matchBurst(cell.r, cell.c, pattern, power);
-    // shake only when earned; tier grows with the streak
-    v.addShake(streak - 2);
+    v.hitStop([70, 90, 115][tier - 1]);
+    for (const cell of cells) v.matchBurst(cell.r, cell.c, pattern, tier);
+    // shake: only earned at the max tier, fixed strongest strength
+    v.addShake(tier === 3 ? 3 : 0);
     // combo counter rises above the eliminated pair (replaces the old toast)
     if (streak >= 2) {
       let mx = 0, my = 0;

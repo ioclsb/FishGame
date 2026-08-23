@@ -281,18 +281,18 @@ const H = { app, flush, fire, el, centerPx };
   check('S6: no-op relayout does not rebake sprites/bg', pre === post, `${pre} -> ${post}`);
 }
 
-// ---- Scenario 7: combo pitch ladder evolves forever -------------------------
+// ---- Scenario 7: fixed combo note with 3-tier punch scaling ----------------
 {
   const SM = sandbox.SoundManager;
-  const freqs = [];
-  for (let c = 1; c <= 60; c++) freqs.push(SM.noteForCombo(c));
-  check('S7: all notes finite & in band', freqs.every((f) => isFinite(f) && f >= 500 && f <= 1800),
-    `${Math.min(...freqs).toFixed(0)}-${Math.max(...freqs).toFixed(0)}Hz`);
-  check('S7: never static between consecutive combos',
-    freqs.every((f, i) => i === 0 || f !== freqs[i - 1]));
-  const distinct = new Set(freqs).size;
-  check('S7: rich variety', distinct >= 10, `${distinct} distinct over 60`);
-  check('S7: deterministic ping-pong cycle', freqs[20] === freqs[20 + 18] && freqs[5] === freqs[5 + 18]);
+  check('S7: fixed match base is finite & in a pleasant band',
+    isFinite(SM.MATCH_BASE) && SM.MATCH_BASE >= 400 && SM.MATCH_BASE <= 900,
+    `${SM.MATCH_BASE}Hz`);
+  const tiers = [1, 2, 3, 4, 10].map((c) => SM.tierForStreak(c));
+  check('S7: punch tiers map 1,2,3 and cap at 3', tiers.join(',') === '1,2,3,3,3',
+    `tiers=${tiers.join(',')}`);
+  check('S7: sub-1 streak clamps to tier 1', SM.tierForStreak(0) === 1);
+  check('S7: pitch ladder removed (constant note, not per-combo pitches)',
+    !('COMBO_LADDER' in SM) && !('noteForCombo' in SM));
 }
 
 // ---- Scenario 8: hit-stop engages on match and releases cleanly -------------

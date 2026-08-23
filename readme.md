@@ -150,18 +150,23 @@ depend on it, never the reverse.
 - **Combo floater**: `连击 ×N` pops in above the eliminated pair (replaces
   the old toast), ease-out-back scale, layout hard-clamped to the visible
   board for the whole animation so edge eliminations never draw off-screen.
-- Combo streak climbs a pentatonic ping-pong ladder
-  (`SoundManager.noteForCombo`) - consecutive combos ALWAYS change pitch,
-  forever, inside a pleasant band - plus ±5 cents human detune and a
-  milestone shimmer every x5. The streak is miss-based, never time-based:
-  it continues across arbitrarily long thinking pauses and breaks only on
-  an actual miss (a tap whose global same-pattern bounce fires, or a
-  reverted drag) or on undo/shuffle/restart.
-- Web Audio synth: pluck match chimes, noise-sweep shuffle, descending
-  revert slide, soft miss blip, UI ticks, win arpeggio. Master-gain mute
-  persisted in `localStorage('psm.sound')`; a DynamicsCompressorNode guards
-  against clipping; first pointerdown performs the iOS silent-unlock; the
-  context auto-resumes when the tab becomes visible again.
+- The match sound is a CLEAN glass break: one sharp broadband "crack"
+  (the glass giving way) then a few DISTINCT high shard "tinks" - short
+  sines with a near-instant attack, slight downward pitch bend and fast
+  decay, cleanly spaced so each one reads crisply (anchored above
+  `SoundManager.MATCH_BASE`). Density scales with the streak and LOCKS at
+  the max once reached (`_registerMatch`): every combo >= 3 plays the
+  identical max-tier feedback - no extra milestone layers. The streak is
+  miss-based, never time-based: it continues across arbitrarily long
+  thinking pauses and breaks only on an actual miss (a tap whose global
+  same-pattern bounce fires, or a reverted drag) or on undo/shuffle/restart.
+- Web Audio synth: clean glass-break match hits (one sharp crack + distinct
+  high shard tinks), noise-sweep shuffle, descending revert slide, soft miss
+  blip, UI ticks, win arpeggio. Master
+  gain mute persisted in `localStorage('psm.sound')`; a
+  DynamicsCompressorNode guards against clipping; first pointerdown performs
+  the iOS silent-unlock; the context auto-resumes when the tab becomes
+  visible again.
 - Haptics via `navigator.vibrate` (guarded) on match/pick/shuffle/win.
 - Win overlay: elapsed time, pairs cleared, hints/undos used, DOM confetti.
 - `prefers-reduced-motion` disables particles, bubbles, confetti, shake,
