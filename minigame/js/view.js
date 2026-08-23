@@ -488,9 +488,6 @@ class RenderView {
         ctx.strokeStyle = 'rgba(255,255,255,0.09)';
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.beginPath(); roundRectPath(ctx, x + G.cell * 0.10, y + G.cell * 0.06, G.cell * 0.80, G.cell * 0.16, G.cell * 0.08);
-        ctx.fillStyle = 'rgba(255,255,255,0.045)';
-        ctx.fill();
         ctx.restore();
       }
     }
