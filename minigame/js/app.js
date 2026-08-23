@@ -20,6 +20,9 @@ const SETTINGS_R = 20;
 const BTN_AREA = 56;
 // 棋盘外框向内收的距离，四周露出页面留白
 const BOARD_PAD = 8;
+// 屏幕画布像素比上限：与 view 的 DPR_CAP 保持一致，避免高端机上
+// 全屏清屏/填充/棋盘 blit 的像素量爆炸式增长
+const DPR_CAP = 2;
 
 function sysInfo() {
   return wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
@@ -34,11 +37,12 @@ class App {
     this.press = null;
     this.picking = null;
     this._hidden = false;
+    this._lastUiRender = -1000;
 
     const info = sysInfo();
     this.width = info.windowWidth;
     this.height = info.windowHeight;
-    this.dpr = info.pixelRatio || 1;
+    this.dpr = Math.min(info.pixelRatio || 1, DPR_CAP);
     const safe = info.safeArea || { top: 0, bottom: this.height };
     this.safeTop = Math.round(safe.top || 0);
     this.safeBottom = Math.max(0, Math.round(this.height - (safe.bottom != null ? safe.bottom : this.height)));
@@ -66,6 +70,7 @@ class App {
       win: null,
       settings: false,
       level: this._loadLevel(),
+      usedOnce: { undo: false, shuffle: false, hint: false },
     };
     this.ui = new UI(this);
     this.ui.setLayout({
@@ -82,6 +87,18 @@ class App {
     this._wireView(this.view);
     this.updateHud();
     this._maybeCoach();
+    // 高刷设备解锁 120fps（60Hz 屏 / 不支持的基础库自动回落，无副作用）
+    try {
+      if (typeof wx !== 'undefined' && wx.setPreferredFramesPerSecond) {
+        const ret = wx.setPreferredFramesPerSecond(120);
+        console.log('[diag] setPreferredFramesPerSecond(120) ok, ret=',
+          ret && ret.errMsg ? ret.errMsg : (ret === undefined ? 'void' : String(ret)));
+      } else {
+        console.log('[diag] setPreferredFramesPerSecond 不可用');
+      }
+    } catch (e) {
+      console.log('[diag] setPreferredFramesPerSecond 抛错:', e && e.message);
+    }
     this._loop();
   }
 
@@ -139,8 +156,17 @@ class App {
     requestAnimationFrame(() => this._loop());
     const now = performance.now();
     try {
+      const f0 = performance.now();
       this.view.tick(now);
-      this.ui.render(this.screenCtx, now);
+      // UI 层跟随整帧成本自适应节流：动画/交互时每帧重绘；整帧够快时
+      // 空闲也跑满帧，慢设备空闲降到 30fps，避免整屏无谓重绘。
+      const busy = this.view.isBusyFrame();
+      if (busy || RenderView._frameCostMs < 10 || now - this._lastUiRender >= 33) {
+        this.ui.render(this.screenCtx, now);
+        this._lastUiRender = now;
+      }
+      const fms = performance.now() - f0;
+      RenderView._frameCostMs = RenderView._frameCostMs * 0.9 + fms * 0.1;
     } catch (err) {
       const msg = (err && err.message) ? err.message : String(err);
       if (msg !== this._lastLoopErr) {
@@ -173,7 +199,7 @@ class App {
     const info = sysInfo();
     this.width = info.windowWidth;
     this.height = info.windowHeight;
-    this.dpr = info.pixelRatio || 1;
+    this.dpr = Math.min(info.pixelRatio || 1, DPR_CAP);
     const safe = info.safeArea || { top: 0, bottom: this.height };
     this.safeTop = Math.round(safe.top || 0);
     this.safeBottom = Math.max(0, Math.round(this.height - (safe.bottom != null ? safe.bottom : this.height)));
@@ -263,10 +289,12 @@ class App {
   _onButton(id) {
     if (id === 'undo') {
       if (this.busy) return;
+      if (this.uiState.usedOnce.undo) { this.setMsg('撤销每局只能用一次'); return; }
       this.sound.ui();
       this.undo();
     } else if (id === 'shuffle') {
       if (this.busy || this.core.getPatternCount() === 0) return;
+      if (this.uiState.usedOnce.shuffle) { this.setMsg('打乱每局只能用一次'); return; }
       this.busy = true;
       this.core.shuffle();
       this.view.hint = null;
@@ -276,11 +304,13 @@ class App {
       this.sound.shuffleSfx();
       this.vibrate(20);
       this.uiState.stuck = false;
+      this.uiState.usedOnce.shuffle = true;
       this.view.render();
       this.updateHud();
       this.busy = false;
     } else if (id === 'hint') {
       if (this.busy) return;
+      if (this.uiState.usedOnce.hint) { this.setMsg('提示每局只能用一次'); return; }
       this.sound.ui();
       this.stats.hints++;
       const h = this.core.findHint();
@@ -291,6 +321,7 @@ class App {
         const species = hinted ? PATTERN_NAMES[hinted.pattern - 1] : '';
         const verb = h.dir === null ? '点击' : '推动';
         this.setMsg(species ? `提示：${verb}${species}即可消除` : `提示：${verb}该方块即可消除`);
+        this.uiState.usedOnce.hint = true;
       } else {
         this.view.hint = null;
         this.view.render();
@@ -569,6 +600,7 @@ class App {
     this.busy = false;
     this.updateHud();
     this.checkMovesLeft();
+    this.uiState.usedOnce.undo = true;
     this.setMsg('已撤销上一步');
   }
 
@@ -585,6 +617,7 @@ class App {
     this.view = new RenderView(this.boardCanvas, this.core, this.platform);
     this._wireView(this.view);
     this.uiState.stuck = false;
+    this.uiState.usedOnce = { undo: false, shuffle: false, hint: false };
     this.setMsg('');
     this.updateHud();
   }

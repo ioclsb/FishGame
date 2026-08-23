@@ -126,10 +126,10 @@ listeners.touchEnd[0]();
 assert(app.stats.hints === 1, 'hint button increments hint counter');
 
 // Open the settings panel and toggle sound / vibration via its rows.
-const sBtn = app.ui.settingsBtn;
+const sBtn = app.ui.buttons[3]; // settings now sits in the button row
 listeners.touchStart[0]({ touches: [{ identifier: 2, clientX: sBtn.x, clientY: sBtn.y }] });
 listeners.touchEnd[0]();
-assert(app.uiState.settings === true, 'settings panel opens via top-left button');
+assert(app.uiState.settings === true, 'settings panel opens via row button');
 
 const sndRow = app.ui.settingsRows.sound;
 const vibRow = app.ui.settingsRows.vibrate;

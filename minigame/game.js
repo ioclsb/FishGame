@@ -3,6 +3,24 @@
 require('./js/debug.js');
 const { G } = require('./js/globals.js');
 
+// 无论真机基础库是否已提供全局 performance，都统一覆盖为从启动时刻计时的
+// 相对毫秒时钟：部分基础库的 performance.now() 刻度为微秒或从绝对时间戳
+// 开始（实测会导致 Math.sin(now * k) 特效爆频、定时动画瞬间完成、busy
+// 状态卡死）。相对毫秒时钟与标准 performance.now() 语义完全一致。
+(function () {
+  const t0 = Date.now();
+  const relNow = () => Date.now() - t0;
+  try {
+    if (typeof globalThis.performance === 'undefined') {
+      globalThis.performance = { now: relNow };
+    } else {
+      globalThis.performance.now = relNow;
+    }
+  } catch (e) {
+    try { globalThis.performance = { now: relNow }; } catch (e2) {}
+  }
+})();
+
 // Launch query support: ?debug=1 (dev console "custom compile condition")
 try {
   const launch = wx.getLaunchOptionsSync();
@@ -26,11 +44,30 @@ try {
   });
 } catch (e) { /* onError is best-effort */ }
 
-// Diagnostic: after boot, dump geometry to storage and save PNG captures of
-// the board canvas and the screen canvas so rendering issues can be seen.
+// Diagnostic: after boot, dump geometry + device environment to storage and
+// save PNG captures of the board canvas and the screen canvas so rendering
+// issues can be seen.
 setTimeout(() => {
   if (!app || !app.view) return;
   try {
+    let si = {};
+    try {
+      si = (wx.getSystemInfoSync && wx.getSystemInfoSync()) ||
+        (wx.getSystemInfo && wx.getSystemInfoSync());
+    } catch (e) {}
+    let nowV = 'NA';
+    try { nowV = performance.now(); } catch (e) {}
+    const diag = {
+      code: '433d1e3+diag',
+      platform: si.platform, sdk: si.SDKVersion, model: si.model,
+      performanceType: typeof globalThis.performance,
+      performanceNow: nowV,
+      wxGetPerformance: typeof wx.getPerformance,
+      audioCtx: typeof wx.createWebAudioContext,
+      nowDiffMs: Date.now() - nowV,
+    };
+    console.log('[diag]', JSON.stringify(diag));
+    wx.setStorageSync('__diag', JSON.stringify(diag));
     wx.setStorageSync('__report', JSON.stringify({
       w: app.width, h: app.height, dpr: app.dpr,
       boardRect: app.boardRect,

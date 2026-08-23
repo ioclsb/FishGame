@@ -145,6 +145,35 @@ class RenderView {
     return s;
   }
 
+  // Soft radial particle (white core -> color -> transparent edge) baked once
+  // per color so per-frame match bursts are plain drawImage calls instead of
+  // creating one radial gradient per particle.
+  static _particleSprite(color) {
+    const key = color + ':' + G.dpr;
+    let m = RenderView._partSprites;
+    if (!m) m = RenderView._partSprites = { entries: {}, count: 0 };
+    if (m.entries[key]) return m.entries[key];
+    if (m.count > 48) m = RenderView._partSprites = { entries: {}, count: 0 };
+    const D = 64;
+    const s = createCanvas();
+    s.width = Math.round(D * G.dpr); s.height = Math.round(D * G.dpr);
+    const c = s.getContext('2d');
+    c.scale(G.dpr, G.dpr);
+    const cx = D / 2;
+    const n = parseInt(color.slice(1), 16);
+    const g = c.createRadialGradient(cx, cx, 0, cx, cx, cx);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.6, `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},0.75)`);
+    g.addColorStop(1, `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},0)`);
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(cx, cx, cx, 0, Math.PI * 2);
+    c.fill();
+    m.entries[key] = s;
+    m.count++;
+    return s;
+  }
+
   constructor(canvas, core, platform) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -179,8 +208,10 @@ class RenderView {
     this.render();
   }
 
-  // External frame driver. App calls this once per rAF. Throttles to ~30fps
-  // when idle; full rate while dragging / effects / hint / pick are live.
+  // External frame driver. App calls this once per rAF. Runs at full rate
+  // while dragging / effects / hint / pick are live; idle it renders every
+  // frame only when the whole frame is fast (<10ms incl. UI layer), otherwise
+  // throttles to ~30fps so slow devices don't pile up work.
   tick(now) {
     if (RenderView._paused) return;
     if (this.platform.hidden()) return;
@@ -197,9 +228,13 @@ class RenderView {
         const sorted = s.dts.slice().sort((a, b) => a - b);
         s.p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
       }
+      if (s.frames % 60 === 0) {
+        console.log('[perf] fps=' + s.fps + ' p95=' + Math.round(s.p95) +
+          'ms frame=' + Math.round(RenderView._frameCostMs * 100) / 100 + 'ms');
+      }
     }
     this._lastFrameT = now;
-    if (this.isBusyFrame() || now - this._lastRender >= 33) {
+    if (this.isBusyFrame() || RenderView._frameCostMs < 10 || now - this._lastRender >= 33) {
       this.render();
       this._lastRender = now;
     }
@@ -368,49 +403,12 @@ class RenderView {
     const ctx = bg.getContext('2d');
     ctx.scale(this.dpr, this.dpr);
     const BW = G.boardW, BH = G.boardH;
-    const D = Math.max(BW, BH);
 
     const water = ctx.createLinearGradient(0, 0, BW * 0.25, BH);
-    water.addColorStop(0, '#227a9f');
-    water.addColorStop(0.5, '#175a7d');
-    water.addColorStop(1, '#103c5c');
+    water.addColorStop(0, '#2b6b8f');
+    water.addColorStop(0.5, '#1b4a68');
+    water.addColorStop(1, '#113351');
     ctx.fillStyle = water;
-    ctx.fillRect(0, 0, BW, BH);
-
-    const blobs = [
-      [0.22, 0.16, 0.30], [0.78, 0.30, 0.26], [0.30, 0.72, 0.32],
-      [0.82, 0.82, 0.24], [0.55, 0.50, 0.36],
-    ];
-    for (const [fx, fy, fr] of blobs) {
-      const g = ctx.createRadialGradient(fx * BW, fy * BH, 0, fx * BW, fy * BH, fr * D);
-      g.addColorStop(0, 'rgba(80,200,255,0.15)');
-      g.addColorStop(1, 'rgba(80,200,255,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, BW, BH);
-    }
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (const [x0, tilt, wRay] of [[0.18, -0.16, 0.16], [0.45, 0.05, 0.12], [0.74, 0.20, 0.18]]) {
-      const gx = ctx.createLinearGradient(0, 0, 0, BH * 0.95);
-      gx.addColorStop(0, 'rgba(190,240,255,0.19)');
-      gx.addColorStop(1, 'rgba(190,240,255,0)');
-      ctx.fillStyle = gx;
-      ctx.beginPath();
-      const bx = x0 * BW, dx = tilt * D;
-      ctx.moveTo(bx - wRay * D * 0.2, 0);
-      ctx.lineTo(bx + wRay * D * 0.2, 0);
-      ctx.lineTo(bx + wRay * D + dx, BH);
-      ctx.lineTo(bx - wRay * D + dx, BH);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
-
-    const sand = ctx.createRadialGradient(BW / 2, BH * 1.06, 0, BW / 2, BH * 1.06, D * 0.62);
-    sand.addColorStop(0, 'rgba(255,214,140,0.18)');
-    sand.addColorStop(1, 'rgba(255,214,140,0)');
-    ctx.fillStyle = sand;
     ctx.fillRect(0, 0, BW, BH);
 
     for (let r = 0; r < ROWS; r++) {
@@ -610,14 +608,10 @@ class RenderView {
     for (const p of this.particles) {
       const t = p.t / p.life;
       const r = p.r * (1 - 0.55 * t);
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, Math.max(r, 0.1));
-      g.addColorStop(0, 'rgba(255,255,255,' + (0.9 * (1 - t)).toFixed(3) + ')');
-      g.addColorStop(0.6, this._hexA(p.color, (0.75 * (1 - t)).toFixed(3)));
-      g.addColorStop(1, this._hexA(p.color, '0'));
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fill();
+      if (r <= 0.1) continue;
+      ctx.globalAlpha = Math.max(0, 1 - t);
+      ctx.drawImage(RenderView._particleSprite(p.color), p.x - r, p.y - r, r * 2, r * 2);
+      ctx.globalAlpha = 1;
     }
 
     if (this.floaters.length) {
@@ -682,11 +676,6 @@ class RenderView {
       ctx.textBaseline = 'middle';
       ctx.fillText(`(${r},${c})`, p.x + G.cell / 2, p.y - 8);
     }
-  }
-
-  _hexA(hex, a) {
-    const n = parseInt(hex.slice(1), 16);
-    return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
   }
 
   drawBlock(block, x, y, scale = 1) {
@@ -880,6 +869,7 @@ class RenderView {
 }
 
 RenderView._stats = { tiles: 0, creatures: 0, bgs: 0, frames: 0, dtSum: 0, fps: 0, p95: 0, dts: [] };
+RenderView._frameCostMs = 0;
 RenderView._sprites = null;
 RenderView._paused = false;
 

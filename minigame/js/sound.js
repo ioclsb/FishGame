@@ -29,6 +29,9 @@ class SoundManager {
   _silentUnlock() {
     if (!this.ctx || !this.master || this._unlocked) return;
     try {
+      // Android 上 WebAudio context 默认 suspended；部分基础库的 ctx 没有
+      // state 属性，所以无条件 resume（对已 running 的 ctx 调用无害）
+      if (this.ctx.resume) this.ctx.resume();
       const b = this.ctx.createBuffer(1, 1, 22050);
       const src = this.ctx.createBufferSource();
       src.buffer = b;
@@ -52,10 +55,21 @@ class SoundManager {
   }
 
   _initOnFirstUse() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    if (this.ctx) {
+      try { if (this.ctx.resume) this.ctx.resume(); } catch (e) {}
+      return;
+    }
     try {
-      if (typeof wx === 'undefined' || !wx.createWebAudioContext) return;
+      if (typeof wx === 'undefined' || !wx.createWebAudioContext) {
+        console.warn('[sound] wx.createWebAudioContext 不可用，走静音模式');
+        return;
+      }
       this.ctx = wx.createWebAudioContext();
+      console.log('[sound] ctx created, state=' + (this.ctx.state || 'n/a') +
+        ', resume=' + typeof this.ctx.resume);
+      // Android 上新建的 context 常为 suspended；部分基础库无 state 属性，
+      // 所以无条件 resume（对 running 的 ctx 调用无害）
+      try { if (this.ctx.resume) this.ctx.resume(); } catch (e) {}
       this.master = this.ctx.createGain();
       this.master.gain.value = this.enabled ? 0.5 : 0.0001;
       this.comp = this.ctx.createDynamicsCompressor();
@@ -81,7 +95,8 @@ class SoundManager {
     gain.gain.setValueAtTime(0.0001, t0);
     gain.gain.exponentialRampToValueAtTime(vol, t0 + atk);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(gain).connect(this.master);
+    osc.connect(gain);
+    gain.connect(this.master);
     osc.start(t0);
     osc.stop(t0 + dur + 0.03);
   }
@@ -103,7 +118,9 @@ class SoundManager {
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(vol, t0);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    src.connect(bp).connect(gain).connect(this.master);
+    src.connect(bp);
+    bp.connect(gain);
+    gain.connect(this.master);
     src.start(t0);
   }
 
@@ -124,7 +141,9 @@ class SoundManager {
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(vol, t0);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    src.connect(bp).connect(gain).connect(this.master);
+    src.connect(bp);
+    bp.connect(gain);
+    gain.connect(this.master);
     src.start(t0);
   }
 

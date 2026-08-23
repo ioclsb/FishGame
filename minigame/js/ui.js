@@ -1,24 +1,25 @@
 // Canvas HUD for the Mini Game port. Replaces the DOM from the web version:
-// settings button (top-left), progress bar + label (above the board), five
-// round icon buttons (below the board), message toast, first-run coach
-// overlay, the win overlay (with confetti) and the settings panel. Everything
-// is drawn on the screen canvas and hit-tested through hitTest().
+// a row of four round icon buttons (undo / shuffle / hint / settings) below
+// the board, progress bar + label (above the board), message toast, first-run
+// coach overlay, the win overlay (with confetti) and the settings panel.
+// Everything is drawn on the screen canvas and hit-tested through hitTest().
 
-const { roundRectPath } = require('./view.js');
+const { roundRectPath, RenderView } = require('./view.js');
 const { shade } = require('./creatures.js');
 
 const BTN_DEFS = [
   { id: 'undo', label: '撤销' },
-  { id: 'shuffle', label: '洗牌' },
+  { id: 'shuffle', label: '打乱' },
   { id: 'hint', label: '提示' },
+  { id: 'settings', label: '设置' },
 ];
 
-// Card colors for the 3D icon buttons (echo the six creature palette).
+// Card colors for the icon buttons — a blue close to the ocean backdrop.
 const BTN_COLORS = {
-  undo: '#2f6fe0',
-  shuffle: '#2fae66',
-  hint: '#f5b52e',
-  settings: '#8e5cf0',
+  undo: '#35759f',
+  shuffle: '#35759f',
+  hint: '#35759f',
+  settings: '#35759f',
 };
 
 class UI {
@@ -39,12 +40,10 @@ class UI {
   setLayout(layout) {
     this.layout = layout;
     const W = layout.width;
-    const safeTop = layout.safeTop;
     const board = layout.board;
 
-    // settings button: top-left corner
-    const sR = 20;
-    this.settingsBtn = { x: 12 + sR, y: safeTop + 12 + sR, r: sR };
+    // settings lives in the button row now; no corner button
+    this.settingsBtn = null;
 
     // progress label + bar: centered just above the board
     const barW = Math.min(Math.round(board.w * 0.72), 240);
@@ -53,9 +52,9 @@ class UI {
     const barY = board.y - 34;
     this.progress = { x: barX, y: barY, w: barW, h: barH, labelY: barY - 12 };
 
-    // main buttons: centered below the board
-    const btnR = W < 360 ? 17 : 19;
-    const gap = Math.max(12, Math.round(W * 0.03));
+    // main buttons: centered below the board, generous spacing
+    const btnR = W < 360 ? 20 : 23;
+    const gap = Math.max(18, Math.round(W * 0.05));
     const btnArea = BTN_DEFS.length * (btnR * 2) + (BTN_DEFS.length - 1) * gap;
     const startX = Math.round((W - btnArea) / 2);
     const bottomLine = layout.height - (layout.safeBottom || 0);
@@ -131,10 +130,6 @@ class UI {
       }
       return { zone: 'overlay', id: null }; // block board while coach is up
     }
-    if (this.settingsBtn) {
-      const dx = x - this.settingsBtn.x, dy = y - this.settingsBtn.y;
-      if (dx * dx + dy * dy <= this.settingsBtn.r * this.settingsBtn.r) return { zone: 'button', id: 'settings' };
-    }
     for (const b of this.buttons) {
       const dx = x - b.x, dy = y - b.y;
       if (dx * dx + dy * dy <= b.r * b.r) return { zone: 'button', id: b.id };
@@ -147,16 +142,12 @@ class UI {
   }
 
   // ---- board frame ------------------------------------------------------
-  _boardRadius(w, h) {
-    return Math.min(28, Math.round(Math.min(w, h) * 0.045));
-  }
-
-  // Rounded frame around the board: a thin dark outer rim for depth plus a
-  // soft sky-blue border that echoes the ocean background.
-  _drawBoardFrame(ctx, br, r) {
+  // Square-cornered frame around the board: a thin dark outer rim for depth
+  // plus a soft sky-blue border that echoes the ocean background.
+  _drawBoardFrame(ctx, br) {
     ctx.save();
     ctx.beginPath();
-    roundRectPath(ctx, br.x + 0.5, br.y + 0.5, br.w - 1, br.h - 1, r);
+    ctx.rect(br.x + 0.5, br.y + 0.5, br.w - 1, br.h - 1);
     ctx.strokeStyle = 'rgba(6,18,34,0.9)';
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -164,11 +155,9 @@ class UI {
 
     ctx.save();
     ctx.beginPath();
-    roundRectPath(ctx, br.x + 1, br.y + 1, br.w - 2, br.h - 2, r);
+    ctx.rect(br.x + 1, br.y + 1, br.w - 2, br.h - 2);
     ctx.strokeStyle = 'rgba(120,190,255,0.38)';
     ctx.lineWidth = 1.5;
-    ctx.shadowColor = 'rgba(90,175,255,0.35)';
-    ctx.shadowBlur = 14;
     ctx.stroke();
     ctx.restore();
   }
@@ -177,27 +166,21 @@ class UI {
   render(ctx, now) {
     if (!this.layout) return;
     const L = this.layout;
-    ctx.clearRect(0, 0, L.width, L.height);
+    // 页面背景是纯静态渐变，烘焙成 sprite 后每帧只需一次 drawImage，
+    // 避免每帧 createLinearGradient + 全屏渐变填充（真机开销大）。
+    const bgSpr = UI._bgSprite(L.width, L.height, this.app.dpr || 1);
+    ctx.drawImage(bgSpr, 0, 0, L.width, L.height);
 
-    // page background
-    const bg = ctx.createLinearGradient(0, 0, 0, L.height);
-    bg.addColorStop(0, '#2476b0');
-    bg.addColorStop(0.55, '#185788');
-    bg.addColorStop(1, '#11446b');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, L.width, L.height);
-
-    // board (rounded clip + theme-colored frame)
+    // board (square-cornered clip + theme-colored frame)
     const br = L.board;
     if (this.app.view && this.app.view.canvas) {
-      const r = this._boardRadius(br.w, br.h);
       ctx.save();
       ctx.beginPath();
-      roundRectPath(ctx, br.x, br.y, br.w, br.h, r);
+      ctx.rect(br.x, br.y, br.w, br.h);
       ctx.clip();
       ctx.drawImage(this.app.view.canvas, br.x, br.y, br.w, br.h);
       ctx.restore();
-      this._drawBoardFrame(ctx, br, r);
+      this._drawBoardFrame(ctx, br);
     }
 
     this._drawHud(ctx, now);
@@ -210,14 +193,14 @@ class UI {
   _drawHud(ctx, now) {
     const s = this.app.uiState;
 
-    // settings button (top-left, 3D card + gear glyph)
-    const sb = this.settingsBtn;
-    if (sb) {
-      this._drawIconCard(ctx, sb.x, sb.y, sb.r, BTN_COLORS.settings);
-      ctx.save();
-      ctx.translate(sb.x, sb.y);
-      this._drawIcon(ctx, 'settings', s);
-      ctx.restore();
+    // live fps readout pinned to the top-left corner
+    {
+      const fps = RenderView._stats.fps;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = '600 11px monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.fillText((fps > 0 ? fps : '--') + 'fps', 12, (this.layout.safeTop || 0) + 14);
     }
 
     // progress bar + swimming fish (light blue fill)
@@ -262,13 +245,15 @@ class UI {
       // When the board has no moves left, the shuffle button pulses (parity
       // with the web version's attnPulse animation).
       const pulse = attention ? 1 + 0.05 * Math.sin(now * 0.007) : 1;
+      // one-shot tools go grey once spent for this round
+      const spent = b.id !== 'settings' && s.usedOnce && s.usedOnce[b.id];
       ctx.save();
+      if (spent) ctx.globalAlpha = 0.55;
       ctx.translate(b.x, b.y);
       ctx.scale(pulse, pulse);
       ctx.translate(-b.x, -b.y);
-      this._drawIconCard(ctx, b.x, b.y, b.r, BTN_COLORS[b.id] || BTN_COLORS.settings);
-      ctx.translate(b.x, b.y);
-      this._drawIcon(ctx, b.id, s);
+      const col = spent ? '#5f7186' : (BTN_COLORS[b.id] || BTN_COLORS.settings);
+      this._drawIconCard(ctx, b.x, b.y, b.r, col);
       ctx.restore();
 
       // text description below the button
@@ -280,42 +265,24 @@ class UI {
     }
   }
 
-  // Level badge: small flag icon + "第 N 关", centered above the progress bar.
+  // Level badge: "第 N 关", centered above the progress bar.
   _drawLevelBadge(ctx, cx, cy) {
     const level = this.app.uiState.level || 1;
-    const label = `第 ${level} 关`;
-    ctx.font = '600 12px sans-serif';
-    const tw = ctx.measureText(label).width;
-    const totalW = 16 + 6 + tw;
-    const x0 = Math.round(cx - totalW / 2);
-    // flag: pole + pennant
-    ctx.strokeStyle = 'rgba(234,246,255,0.9)';
-    ctx.lineWidth = 1.5;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x0 + 2, cy - 8);
-    ctx.lineTo(x0 + 2, cy + 8);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(125,200,255,0.95)';
-    ctx.beginPath();
-    ctx.moveTo(x0 + 2, cy - 8);
-    ctx.lineTo(x0 + 14, cy - 5);
-    ctx.lineTo(x0 + 2, cy - 2);
-    ctx.closePath();
-    ctx.fill();
-    // label
-    ctx.textAlign = 'left';
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillText(label, x0 + 18, cy);
+    ctx.font = '600 12px sans-serif';
+    ctx.fillText(`第 ${level} 关`, cx, cy);
   }
 
   // Small fish swimming on the progress bar: bobs gently and wags its tail.
+  // Orange body + white outline so it stands out against the light-blue fill.
   _drawBarFish(ctx, x, y, now) {
     const bob = Math.sin(now * 0.006) * 1.8;
     const wag = Math.sin(now * 0.012) * 1.5;
     ctx.save();
     ctx.translate(x, y + bob);
+    ctx.scale(1.35, 1.35);
     // tail
     ctx.beginPath();
     ctx.moveTo(-6.5, -2.5);
@@ -323,13 +290,16 @@ class UI {
     ctx.lineTo(-10, 5 + wag);
     ctx.lineTo(-6.5, 2.5);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(255,190,100,0.95)';
+    ctx.fillStyle = '#ffb066';
     ctx.fill();
     // body
     ctx.beginPath();
     ctx.ellipse(0, 0, 7, 4.2, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(130,205,255,0.95)';
+    ctx.fillStyle = '#ff8a50';
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
     // eye
     ctx.beginPath();
     ctx.arc(3.5, -1, 1.1, 0, Math.PI * 2);
@@ -338,185 +308,189 @@ class UI {
     ctx.restore();
   }
 
-  // Glossy 3D circular card behind each icon: radial-gradient sphere, drop
-// shadow, subtle bottom rim and a top-left specular highlight.
-  _drawIconCard(ctx, x, y, r, color) {
-    ctx.save();
-    // drop shadow
-    ctx.beginPath();
-    ctx.arc(x, y + r * 0.14, r * 0.98, 0, Math.PI * 2);
-    ctx.shadowColor = 'rgba(3,12,24,0.55)';
-    ctx.shadowBlur = r * 0.4;
-    ctx.fillStyle = 'rgba(3,12,24,0)';
-    ctx.fill();
-    // glossy sphere body
-    const g = ctx.createRadialGradient(x - r * 0.4, y - r * 0.45, r * 0.15, x, y, r * 1.05);
-    g.addColorStop(0, shade(color, 54));
-    g.addColorStop(0.5, color);
-    g.addColorStop(1, shade(color, -34));
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = g;
-    ctx.fill();
-    // bottom rim shadow
-    ctx.beginPath();
-    ctx.arc(x, y + r * 0.03, r * 0.9, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(6,18,34,0.28)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    // top specular highlight
-    ctx.beginPath();
-    ctx.ellipse(x - r * 0.32, y - r * 0.4, r * 0.42, r * 0.24, -0.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.42)';
-    ctx.fill();
-    ctx.restore();
+  // Static full-screen page gradient, baked once per size so render() costs a
+  // single drawImage instead of a per-frame linear-gradient fill.
+  static _bgSprite(w, h, dpr) {
+    const key = `${w}:${h}:${dpr}`;
+    let m = UI._bgSprites;
+    if (!m) m = UI._bgSprites = {};
+    if (m[key]) return m[key];
+    const s = wx.createCanvas();
+    s.width = Math.ceil(w * dpr); s.height = Math.ceil(h * dpr);
+    const c = s.getContext('2d');
+    c.scale(dpr, dpr);
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#275d7f');
+    g.addColorStop(0.55, '#173f5f');
+    g.addColorStop(1, '#0a2440');
+    c.fillStyle = g;
+    c.fillRect(0, 0, w, h);
+    m[key] = s;
+    return s;
   }
 
-  // White bold glyph drawn on top of the 3D circle (0,0 centered). Glyphs are
-  // chunky and cute: an undo arrow with a smiley, crossed fat shuffle arrows,
-  // a smiling lightbulb for hints and a smiling gear for settings.
-  _drawIcon(ctx, id, s) {
+  // Matte elegant button: the card (soft vertical gradient, hairline rim, faint
+  // drop shadow) and the glyph are baked into ONE cached sprite, so per-frame
+  // cost is a single drawImage with no gradients or glow.
+  static _cardSprite(id, r, color, dpr) {
+    const key = `${id}:${color}:${r}:${dpr}`;
+    let m = UI._cardSprites;
+    if (!m) m = UI._cardSprites = {};
+    if (m[key]) return m[key];
+    const size = Math.ceil(r * 3.0 * dpr);
+    const s = wx.createCanvas();
+    s.width = size; s.height = size;
+    const c = s.getContext('2d');
+    c.scale(dpr, dpr);
+    const ox = r * 1.5, oy = r * 1.5;
+    // soft drop shadow for lift
+    c.beginPath();
+    c.arc(ox, oy + r * 0.12, r * 0.97, 0, Math.PI * 2);
+    c.shadowColor = 'rgba(2,10,20,0.45)';
+    c.shadowBlur = r * 0.3;
+    c.fillStyle = 'rgba(2,10,20,0)';
+    c.fill();
+    // dark base disc sitting slightly lower: quiet button thickness
+    c.fillStyle = shade(color, -32);
+    c.beginPath();
+    c.arc(ox, oy + r * 0.07, r, 0, Math.PI * 2);
+    c.fill();
+    // face: light-from-above gradient
+    const g = c.createLinearGradient(0, oy - r, 0, oy + r);
+    g.addColorStop(0, shade(color, 24));
+    g.addColorStop(0.55, color);
+    g.addColorStop(1, shade(color, -12));
+    c.beginPath();
+    c.arc(ox, oy, r, 0, Math.PI * 2);
+    c.fillStyle = g;
+    c.fill();
+    // gentle top sheen: soft light band hugging the upper edge
+    c.beginPath();
+    c.arc(ox, oy, r - r * 0.18, Math.PI * 1.15, Math.PI * 1.85);
+    c.strokeStyle = 'rgba(255,255,255,0.16)';
+    c.lineWidth = r * 0.22;
+    c.lineCap = 'round';
+    c.stroke();
+    // hairline rim
+    c.beginPath();
+    c.arc(ox, oy, r - 0.75, 0, Math.PI * 2);
+    c.strokeStyle = 'rgba(255,255,255,0.28)';
+    c.lineWidth = 1;
+    c.stroke();
+    // glyph on top
+    c.save();
+    c.translate(ox, oy);
+    UI._drawIcon(c, id);
+    c.restore();
+    m[key] = s;
+    return s;
+  }
+
+  _drawIconCard(ctx, x, y, r, color) {
+    const spr = UI._cardSprite(this._iconIdAt(x, y), r, color, this.app.dpr || 1);
+    const half = r * 1.5;
+    ctx.drawImage(spr, x - half, y - half, half * 2, half * 2);
+  }
+
+  // Map a button position back to its icon id so _drawIconCard callers stay
+  // unchanged while sprites are keyed per glyph.
+  _iconIdAt(x, y) {
+    if (this.settingsBtn && this.settingsBtn.x === x && this.settingsBtn.y === y) return 'settings';
+    const b = this.buttons.find((bt) => bt.x === x && bt.y === y);
+    return b ? b.id : 'settings';
+  }
+
+  // White chunky glyph drawn on top of the 3D circle (0,0 centered). The icons
+  // are cute white cutouts: a seahorse for undo, a turtle for shuffle, a crab
+  // for hints and a sea urchin for settings.
+  static _drawIcon(ctx, id) {
     const L = (x, y, x2, y2) => { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x2, y2); ctx.stroke(); };
+    const dot = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+    ctx.strokeStyle = '#fff';
+    ctx.fillStyle = '#fff';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     switch (id) {
       case 'undo': {
-        // chunky curved back arrow with a happy face in the curl
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 3.4;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+        // sweeping return arc with an arrowhead riding the curve's end
+        ctx.lineWidth = 1.9;
         ctx.beginPath();
-        ctx.arc(0.5, 0.5, 6.4, -Math.PI * 0.7, Math.PI * 0.42);
+        ctx.arc(1, 0, 6, -Math.PI / 3, Math.PI * 13 / 12);
         ctx.stroke();
-        // rounded arrowhead
-        ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(-3.6, -5.6, 1.8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(-5.4, -4.6);
-        ctx.lineTo(-8.4, -1.4);
-        ctx.lineTo(-3.4, -1.7);
-        ctx.closePath();
-        ctx.fill();
-        // smiley face in the open area
-        ctx.beginPath();
-        ctx.arc(-0.4, 3.6, 1.4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(3.6, 1.8, 1.4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.lineWidth = 1.3;
-        ctx.beginPath();
-        ctx.arc(1.6, 4.6, 2.2, Math.PI * 0.15, Math.PI * 0.85);
+        ctx.moveTo(-3.84, 1.81);
+        ctx.lineTo(-4.8, -1.55);
+        ctx.lineTo(-7.32, 0.89);
         ctx.stroke();
         break;
       }
       case 'shuffle': {
-        // two crossed fat arrows (up-right / down-left)
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 3.2;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+        // two gently curved arrows crossing in the middle
+        ctx.lineWidth = 1.9;
         ctx.beginPath();
-        ctx.moveTo(-5.5, 5.5);
-        ctx.lineTo(5.5, -5.5);
+        ctx.moveTo(-6.8, 6.2);
+        ctx.quadraticCurveTo(0.5, 0.5, 6.8, -6.2);
         ctx.stroke();
-        ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.moveTo(2.2, -5.4);
-        ctx.lineTo(6.6, -6.6);
-        ctx.lineTo(5.4, -2.2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.beginPath();
-        ctx.moveTo(5.5, 5.5);
-        ctx.lineTo(-5.5, -5.5);
+        ctx.moveTo(6.8, 6.2);
+        ctx.quadraticCurveTo(-0.5, 0.5, -6.8, -6.2);
         ctx.stroke();
-        ctx.fillStyle = '#fff';
+        // arrowhead on the up-right end
         ctx.beginPath();
-        ctx.moveTo(-2.2, 5.4);
-        ctx.lineTo(-6.6, 6.6);
-        ctx.lineTo(-5.4, 2.2);
-        ctx.closePath();
-        ctx.fill();
-        // sparkle star at the crossing
+        ctx.moveTo(5.65, -3.11);
+        ctx.lineTo(6.8, -6.2);
+        ctx.lineTo(3.11, -5.65);
+        ctx.stroke();
+        // arrowhead on the up-left end
         ctx.beginPath();
-        ctx.moveTo(0, -3.4);
-        ctx.lineTo(1, -1);
-        ctx.lineTo(3.4, 0);
-        ctx.lineTo(1, 1);
-        ctx.lineTo(0, 3.4);
-        ctx.lineTo(-1, 1);
-        ctx.lineTo(-3.4, 0);
-        ctx.lineTo(-1, -1);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(-5.65, -3.11);
+        ctx.lineTo(-6.8, -6.2);
+        ctx.lineTo(-3.11, -5.65);
+        ctx.stroke();
         break;
       }
       case 'hint': {
-        // smiling lightbulb with glow rays and a sparkle
-        ctx.strokeStyle = '#fff';
-        ctx.fillStyle = '#fff';
-        ctx.lineCap = 'round';
-        ctx.lineWidth = 2.2;
-        L(0, -7.4, 0, -10.4);
-        L(-5.6, -5, -8.2, -7.2);
-        L(5.6, -5, 8.2, -7.2);
-        // bulb
+        // glowing bulb: outlined dome with a rounded neck, twin base lines,
+        // a little filament and three rays
+        ctx.lineWidth = 1.9;
         ctx.beginPath();
-        ctx.arc(0, -1.8, 6, Math.PI, 0);
-        ctx.lineTo(3.7, 4.4);
-        ctx.quadraticCurveTo(0, 6.6, -3.7, 4.4);
+        ctx.arc(0, -1.4, 4.4, Math.PI * 0.8, Math.PI * 0.2);
+        ctx.lineTo(2.9, 3.1);
+        ctx.quadraticCurveTo(0, 4.4, -2.9, 3.1);
         ctx.closePath();
-        ctx.fill();
-        // cute face
-        ctx.fillStyle = 'rgba(120,84,20,0.9)';
-        ctx.beginPath();
-        ctx.arc(-2.3, -1.4, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(2.3, -1.4, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(120,84,20,0.9)';
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.arc(0, 0.9, 2.6, Math.PI * 0.18, Math.PI * 0.82);
         ctx.stroke();
-        // sparkle star near the bulb
-        ctx.strokeStyle = '#fff';
+        // filament
         ctx.lineWidth = 1.4;
-        L(-1.2, -8.8, 1.2, -8.8);
-        L(0, -10, 0, -7.6);
+        ctx.beginPath();
+        ctx.arc(0, -0.6, 1.6, Math.PI * 0.15, Math.PI * 0.85);
+        ctx.stroke();
+        // base lines
+        L(-1.9, 4.9, 1.9, 4.9);
+        L(-1.4, 6.4, 1.4, 6.4);
+        // rays
+        L(0, -8.6, 0, -6.9);
+        L(-4.6, -7.4, -3.6, -6.0);
+        L(4.6, -7.4, 3.6, -6.0);
         break;
       }
       case 'settings': {
-        // smiling gear
-        ctx.strokeStyle = '#fff';
-        ctx.fillStyle = '#fff';
-        ctx.lineCap = 'round';
-        ctx.lineWidth = 3;
-        for (let i = 0; i < 8; i++) {
-          const a = i * Math.PI / 4;
-          ctx.beginPath();
-          ctx.moveTo(Math.cos(a) * 5.4, Math.sin(a) * 5.4);
-          ctx.lineTo(Math.cos(a) * 8.4, Math.sin(a) * 8.4);
-          ctx.stroke();
+        // sea urchin as fine line art
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 12; i++) {
+          const a = i * Math.PI / 6;
+          L(Math.cos(a) * 4.9, Math.sin(a) * 4.9, Math.cos(a) * 8.2, Math.sin(a) * 8.2);
         }
-        ctx.lineWidth = 3;
+        // body ring
+        ctx.lineWidth = 1.9;
         ctx.beginPath();
-        ctx.arc(0, 0, 5.4, 0, Math.PI * 2);
+        ctx.arc(0, 0, 4.9, 0, Math.PI * 2);
         ctx.stroke();
-        // smiley face in the hub
+        // face
+        dot(-1.6, -0.9, 0.85);
+        dot(1.6, -0.9, 0.85);
+        ctx.lineWidth = 1.4;
         ctx.beginPath();
-        ctx.arc(-1.6, -1.3, 1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(1.6, -1.3, 1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.lineWidth = 1.3;
-        ctx.beginPath();
-        ctx.arc(0, 0.5, 1.9, Math.PI * 0.2, Math.PI * 0.8);
+        ctx.arc(0, 0.4, 1.8, Math.PI * 0.2, Math.PI * 0.8);
         ctx.stroke();
         break;
       }
