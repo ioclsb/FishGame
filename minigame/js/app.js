@@ -105,6 +105,15 @@ class App {
 
   // ---- layout -----------------------------------------------------------
   _loadLevel() {
+    // 启动参数 ?level=N 可跳关（开发者工具“启动参数”填 level=36），仅用于测试/调试。
+    try {
+      const q = (wx.getLaunchOptionsSync && wx.getLaunchOptionsSync().query) || {};
+      const ql = parseInt(q.level, 10);
+      if (Number.isFinite(ql) && ql >= 1) {
+        try { storage.set('psm.level', String(ql)); } catch (e) {}
+        return ql;
+      }
+    } catch (e) { /* 忽略，退回持久化关卡 */ }
     try {
       const v = parseInt(storage.get('psm.level'), 10);
       return Number.isFinite(v) && v >= 1 ? v : 1;
