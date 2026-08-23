@@ -174,6 +174,41 @@ class RenderView {
     return s;
   }
 
+  static _starSprite(color = '#ffffff') {
+    const key = 'star:' + color + ':' + G.dpr;
+    let m = RenderView._starSprites;
+    if (!m) m = RenderView._starSprites = { entries: {}, count: 0 };
+    if (m.entries[key]) return m.entries[key];
+    if (m.count > 24) m = RenderView._starSprites = { entries: {}, count: 0 };
+    const D = 64;
+    const s = createCanvas();
+    s.width = Math.round(D * G.dpr); s.height = Math.round(D * G.dpr);
+    const c = s.getContext('2d');
+    c.scale(G.dpr, G.dpr);
+    const cx = D / 2, outer = cx * 0.92, inner = cx * 0.30;
+    // 柔光底
+    const g = c.createRadialGradient(cx, cx, 0, cx, cx, cx);
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.5, color === '#ffffff' ? 'rgba(200,240,255,0.5)' : color);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(cx, cx, cx, 0, Math.PI * 2); c.fill();
+    // 四角星
+    c.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const ang = -Math.PI / 2 + i * Math.PI / 4;
+      const rad = i % 2 ? inner : outer;
+      const x = cx + Math.cos(ang) * rad, y = cx + Math.sin(ang) * rad;
+      i ? c.lineTo(x, cx + Math.sin(ang) * rad) : c.moveTo(x, cx + Math.sin(ang) * rad);
+    }
+    c.closePath();
+    c.fillStyle = 'rgba(255,255,255,0.95)';
+    c.fill();
+    m.entries[key] = s;
+    m.count++;
+    return s;
+  }
+
   constructor(canvas, core, platform) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -192,6 +227,7 @@ class RenderView {
     this.hoverCell = null;
     this.particles = [];
     this.rings = [];
+    this.sparkles = [];
     this.floaters = [];
     this.pendingFx = [];
     this.bubbles = null;
@@ -243,7 +279,8 @@ class RenderView {
   isBusyFrame() {
     return !!(this.drag || this.revert || this.pick || this.bounce ||
               this.hint || this.elimFlash ||
-              this.particles.length > 0 || this.rings.length > 0);
+              this.particles.length > 0 || this.rings.length > 0 ||
+              this.sparkles.length > 0);
   }
 
   static setPaused(p) { RenderView._paused = p; }
@@ -306,6 +343,36 @@ class RenderView {
       const g = this.rings[i];
       g.t += dt;
       if (g.t >= g.dur) this.rings.splice(i, 1);
+    }
+    // 拖动时在被拖方块周围生成一闪一闪的小星星拖尾
+    if (this.drag && !REDUCED_MOTION) {
+      const dir = this.drag.dir;
+      const d = GameCore.DIRS[dir];
+      const off = this.drag.offsetPx;
+      for (const m of this.drag.group) {
+        const cx = m.c * G.pitch + G.cell / 2 + d.dc * off;
+        const cy = m.r * G.pitch + G.cell / 2 + d.dr * off;
+        if (Math.random() < 22 * dt) {
+          this.sparkles.push({
+            x: cx + (Math.random() - 0.5) * G.cell * 0.7,
+            y: cy + (Math.random() - 0.5) * G.cell * 0.7,
+            t: 0,
+            life: 0.45 + Math.random() * 0.4,
+            r: G.cell * (0.10 + Math.random() * 0.10),
+            ph: Math.random() * Math.PI * 2,
+            vx: (Math.random() - 0.5) * 26,
+            vy: (Math.random() - 0.5) * 26 - 18,
+            color: Math.random() < 0.5 ? '#ffffff' : '#bfefff',
+          });
+        }
+      }
+    }
+    for (let i = this.sparkles.length - 1; i >= 0; i--) {
+      const s = this.sparkles[i];
+      s.t += dt;
+      if (s.t >= s.life) { this.sparkles.splice(i, 1); continue; }
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
     }
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i];
@@ -528,8 +595,8 @@ class RenderView {
       const t = Math.min(1, (performance.now() - this.bounce.t0) / this.bounce.dur);
       if (t < 1) {
         pulsePattern = this.bounce.pattern;
-        // 同色方块来回晃动约 ±9°，幅度随时间衰减
-        const ampRad = (1 - t) * 0.16;
+        // 同色方块来回晃动约 ±14°，幅度随时间衰减
+        const ampRad = (1 - t) * 0.247;
         pulseAngle = Math.sin(t * Math.PI * 2.5) * ampRad;
       } else {
         this.bounce = null;
@@ -603,6 +670,15 @@ class RenderView {
       if (r <= 0.1) continue;
       ctx.globalAlpha = Math.max(0, 1 - t);
       ctx.drawImage(RenderView._particleSprite(p.color), p.x - r, p.y - r, r * 2, r * 2);
+      ctx.globalAlpha = 1;
+    }
+    for (const s of this.sparkles) {
+      const t = s.t / s.life;
+      const fade = Math.max(0, 1 - t);
+      const tw = 0.45 + 0.55 * Math.abs(Math.sin(s.t * 12 + s.ph));
+      ctx.globalAlpha = fade * tw;
+      const r = s.r * (0.7 + 0.3 * tw);
+      ctx.drawImage(RenderView._starSprite(s.color), s.x - r, s.y - r, r * 2, r * 2);
       ctx.globalAlpha = 1;
     }
 
@@ -686,6 +762,8 @@ class RenderView {
   }
 
   triggerBounce(pattern) {
+    // 同色正在晃动时不打断，连续点击更顺滑
+    if (this.bounce && this.bounce.pattern === pattern) return;
     this.bounce = { pattern, t0: performance.now(), dur: 450 };
     this._animateUntil(450, () => this.render(), () => {
       this.bounce = null;
