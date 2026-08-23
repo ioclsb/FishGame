@@ -398,9 +398,10 @@ class App {
         else if (hit.id === 'settingsSound') this._toggleSound();
         else if (hit.id === 'settingsVibrate') this._toggleVibrate();
         else if (hit.id === 'settingsMusic') this._toggleMusic();
-        else if (hit.id === 'settingsRestart') {
-          this.uiState.settings = false;
-          this.restart();
+        else if (hit.id === 'settingsRestart' || hit.id === 'settingsClose') {
+          // 按下时记录，松开再触发，以呈现按压点击效果
+          this.ui.pressId = hit.id;
+          this.sound.ui();
         }
         return;
       }
@@ -479,6 +480,19 @@ class App {
   onTouchEnd() {
     clearTimeout(this._dbgTimer);
     this._dbgTimer = null;
+    // 设置面板底部按钮：松开时触发（呈现按压点击效果）
+    if (this.ui.pressId) {
+      const id = this.ui.pressId;
+      this.ui.pressId = null;
+      if (id === 'settingsRestart') {
+        this.uiState.settings = false;
+        this.restart();
+      } else if (id === 'settingsClose') {
+        this.uiState.settings = false;
+        this.view.render();
+      }
+      return;
+    }
     if (!this.busy) return;
     const hadDrag = this.press && this.press.dir !== null;
     const clickRc = this.press ? { r: this.press.r, c: this.press.c } : null;

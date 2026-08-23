@@ -33,6 +33,7 @@ class UI {
     this.winBtn = null;         // {x, y, w, h}
     this.settingsCloseBtn = null; // {x, y, w, h}
     this.settingsRestartBtn = null; // {x, y, w, h}
+    this.pressId = null; // 底部按钮按压反馈：'settingsRestart' | 'settingsClose'
     this.confetti = [];         // active confetti pieces
     this.fishX = 0;             // animated fish position along the bar
     this._lastT = 0;
@@ -89,9 +90,9 @@ class UI {
     const rowH = 40;
     this.settingsCard = c;
     this.settingsRows = {
-      sound:   { x: rowX, y: c.y + 78, w: rowW, h: rowH },
-      vibrate: { x: rowX, y: c.y + 126, w: rowW, h: rowH },
-      music:   { x: rowX, y: c.y + 174, w: rowW, h: rowH },
+      music:   { x: rowX, y: c.y + 78, w: rowW, h: rowH },
+      sound:   { x: rowX, y: c.y + 126, w: rowW, h: rowH },
+      vibrate: { x: rowX, y: c.y + 174, w: rowW, h: rowH },
     };
     const bh = 44;
     const gap = 12;
@@ -537,37 +538,47 @@ class UI {
     ctx.fillText('设置', c.x + c.w / 2, c.y + 42);
 
     const s = this.app.uiState;
-    this._drawSettingsRow(ctx, this.settingsRows.sound, '声音', null, !!s.soundOn);
-    this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate);
     this._drawSettingsRow(ctx, this.settingsRows.music, '音乐', null, !!s.musicOn);
+    this._drawSettingsRow(ctx, this.settingsRows.sound, '音效', null, !!s.soundOn);
+    this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate);
 
-    // 底部一排按钮：左“重开”、右“关闭”
+    // 底部一排按钮：左“重新开始”、右“返回游戏”
     const rb = this.settingsRestartBtn;
-    if (rb) {
-      ctx.beginPath();
-      roundRectPath(ctx, rb.x, rb.y, rb.w, rb.h, rb.h / 2);
-      const g1 = ctx.createLinearGradient(0, rb.y, 0, rb.y + rb.h);
-      g1.addColorStop(0, '#2f7fb0');
-      g1.addColorStop(1, '#1c5e87');
-      ctx.fillStyle = g1;
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = '700 15px sans-serif';
-      ctx.fillText('重开', rb.x + rb.w / 2, rb.y + rb.h / 2 + 1);
-    }
+    if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#2f7fb0', '#1c5e87', this.pressId === 'settingsRestart');
     const b = this.settingsCloseBtn;
-    if (b) {
-      ctx.beginPath();
-      roundRectPath(ctx, b.x, b.y, b.w, b.h, b.h / 2);
-      const g2 = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
-      g2.addColorStop(0, '#58d97e');
-      g2.addColorStop(1, '#2fae5c');
-      ctx.fillStyle = g2;
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = '700 15px sans-serif';
-      ctx.fillText('关闭', b.x + b.w / 2, b.y + b.h / 2 + 1);
+    if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose');
+  }
+
+  // 设置面板底部按钮：圆角胶囊、文字居中，press 时轻微缩小并提亮
+  _drawPanelButton(ctx, btn, label, c0, c1, pressed) {
+    ctx.save();
+    if (pressed) {
+      ctx.globalAlpha = 0.92;
+      ctx.translate(btn.x + btn.w / 2, btn.y + btn.h / 2);
+      ctx.scale(0.95, 0.95);
+      ctx.translate(-(btn.x + btn.w / 2), -(btn.y + btn.h / 2));
     }
+    ctx.beginPath();
+    roundRectPath(ctx, btn.x, btn.y, btn.w, btn.h, btn.h / 2);
+    const g = ctx.createLinearGradient(0, btn.y, 0, btn.y + btn.h);
+    g.addColorStop(0, pressed ? this._lighten(c0) : c0);
+    g.addColorStop(1, pressed ? this._lighten(c1) : c1);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 15px sans-serif';
+    ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+    ctx.restore();
+  }
+
+  _lighten(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.min(255, ((n >> 16) & 255) + 28);
+    const g = Math.min(255, ((n >> 8) & 255) + 28);
+    const b = Math.min(255, (n & 255) + 28);
+    return `rgb(${r},${g},${b})`;
   }
 
   // One option row in the settings panel: label + (toggle switch | hint text).
