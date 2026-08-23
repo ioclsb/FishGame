@@ -370,28 +370,11 @@ class UI {
     c.beginPath();
     c.arc(ox, oy + r * 0.07, r, 0, Math.PI * 2);
     c.fill();
-    // face: light-from-above gradient
-    const g = c.createLinearGradient(0, oy - r, 0, oy + r);
-    g.addColorStop(0, shade(color, 24));
-    g.addColorStop(0.55, color);
-    g.addColorStop(1, shade(color, -12));
+    // face: 纯色圆，去掉高光带与描边
     c.beginPath();
     c.arc(ox, oy, r, 0, Math.PI * 2);
-    c.fillStyle = g;
+    c.fillStyle = color;
     c.fill();
-    // gentle top sheen: soft light band hugging the upper edge
-    c.beginPath();
-    c.arc(ox, oy, r - r * 0.18, Math.PI * 1.15, Math.PI * 1.85);
-    c.strokeStyle = 'rgba(255,255,255,0.16)';
-    c.lineWidth = r * 0.22;
-    c.lineCap = 'round';
-    c.stroke();
-    // hairline rim
-    c.beginPath();
-    c.arc(ox, oy, r - 0.75, 0, Math.PI * 2);
-    c.strokeStyle = 'rgba(255,255,255,0.28)';
-    c.lineWidth = 1;
-    c.stroke();
     // glyph on top
     c.save();
     c.translate(ox, oy);
