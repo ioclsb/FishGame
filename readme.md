@@ -147,8 +147,9 @@ depend on it, never the reverse.
   +30ms; the combo floater rises +110ms.
 - **Screen shake**: only earned at combo x3+, tier-scaled amplitude/duration,
   decaying fast, skipped under reduced-motion.
-- **Praise floaters**: Candy-Crush-style escalation words (好极了→无与伦比)
-  pop in above the eliminated pair with an ease-out-back scale.
+- **Combo floater**: `连击 ×N` pops in above the eliminated pair (replaces
+  the old toast), ease-out-back scale, layout hard-clamped to the visible
+  board for the whole animation so edge eliminations never draw off-screen.
 - Combo streak climbs a pentatonic ping-pong ladder
   (`SoundManager.noteForCombo`) - consecutive combos ALWAYS change pitch,
   forever, inside a pleasant band - plus ±5 cents human detune and a
