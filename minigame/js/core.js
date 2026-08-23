@@ -8,22 +8,57 @@ const { G } = require('./globals.js');
 const DEBUG = G.__DEBUG_ENABLED === true;
 
 const COLS = 10, ROWS = 14;      // 竖屏 10x14 布局
-const PATTERN_COUNTS = [18, 18, 18, 18, 18, 18, 32]; // 图案 1..7 各自数量，和=140（铺满棋盘）
-const PATTERNS = PATTERN_COUNTS.length;              // 7
-const TOTAL_BLOCKS = PATTERN_COUNTS.reduce((a, b) => a + b, 0); // 140
-const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 70
+const TOTAL_BLOCKS = COLS * ROWS; // 棋盘铺满 = 140 块
+const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 70 对
+
+// 关卡难度曲线：图案数随关卡阶梯式增加，到固定关后不再新增、难度固定。
+const BASE_PATTERNS = 7;   // 第 1 关图案数
+const MAX_PATTERNS = 35;   // 最终图案数（每种 4 块 = 140，铺满且全偶数）
+const STEP_PATTERNS = 2;   // 每个里程碑新增图案数
+const MILESTONE = 35;      // 每 35 关为一个里程碑（+2 种）
+const FIXED_LEVEL = 491;   // 35 种在此关引入完毕（7 + 2*14 = 35，1+14*35=491），之后难度固定
+
+function patternCountForLevel(level) {
+  const L = Math.max(1, level | 0);
+  const steps = Math.floor((L - 1) / MILESTONE);
+  return Math.min(MAX_PATTERNS, BASE_PATTERNS + steps * STEP_PATTERNS);
+}
+
+// 把 140 块按偶数均衡分配给 P 种图案（和=140，每种均为偶数，可两两消完）。
+function countsForLevel(level) {
+  const P = patternCountForLevel(level);
+  const counts = new Array(P).fill(0);
+  let base = Math.floor(TOTAL_BLOCKS / P);
+  if (base % 2 === 1) base -= 1;          // 取不超过均值的偶数
+  let remaining = TOTAL_BLOCKS - base * P; // 必为偶数
+  for (let i = 0; i < P; i++) counts[i] = base;
+  let idx = 0;
+  while (remaining > 0) { counts[idx % P] += 2; remaining -= 2; idx++; }
+  return counts;
+}
+
+// 相邻同图案上限：随关卡连续收紧（前期松、固定关最紧），越高越难找配对。
+function scrambleCapForLevel(level) {
+  const P = patternCountForLevel(level);
+  const t = Math.min(1, Math.max(0, (Math.max(1, level) - 1) / (FIXED_LEVEL - 1)));
+  const k = 1.3 - t * (1.3 - 0.5);
+  return Math.max(1, Math.round((COLS * (ROWS - 1) + (COLS - 1) * ROWS) / P * k));
+}
+
 
 class GameCore {
-  constructor() {
-    this.grid = null;      // ROWS x COLS, 0 = empty, 1..6 = pattern
+  constructor(level = 1) {
+    this.grid = null;      // ROWS x COLS, 0 = empty, 1..P = pattern
     this.blocks = null;    // [{id, pattern, r, c}]
     this.clearedPairs = 0;
     this.nextId = 1;
     this.undoSnapshot = null; // snapshot of the board before the last elimination
-    this.init();
+    this.level = 1;
+    this.init(level);
   }
 
-  init() {
+  init(level) {
+    if (level != null) this.level = Math.max(1, level | 0);
     for (let attempt = 0; attempt < 100; attempt++) {
       this._generateLayout();
       if (this.findHint() !== null) return;
@@ -38,16 +73,69 @@ class GameCore {
     this.nextId = 1;
     this.undoSnapshot = null;   // a fresh board has no undo history
 
-    let bi = 0;
-    const bag = [];
-    PATTERN_COUNTS.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(i + 1); });
-    this._shuffleArray(bag);
+    const counts = countsForLevel(this.level);
+    const cap = scrambleCapForLevel(this.level);
+    let fallback = null; // 最接近（相邻同图案最少且≥1）的布局
+    for (let attempt = 0; attempt < 400; attempt++) {
+      const bag = [];
+      counts.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(i + 1); });
+      this._shuffleArray(bag);
+      let bi = 0;
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS; c++) {
+          const pattern = bag[bi++];
+          this.grid[r][c] = pattern;
+          this.blocks.push({ id: this.nextId++, pattern, r, c });
+        }
+      const adj = this._adjacencySamePairs();
+      if (adj >= 1 && adj <= cap) return; // 既“活”又够打散
+      if (adj >= 1 && (!fallback || adj < fallback.adj)) fallback = { adj, grid: this.grid.map(row => row.slice()), blocks: this.blocks.map(b => ({ ...b })) };
+      // 重置以便下次尝试
+      this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+      this.blocks = [];
+    }
+    if (fallback) {
+      this.grid = fallback.grid;
+      this.blocks = fallback.blocks;
+      this.nextId = this.blocks.reduce((m, b) => Math.max(m, b.id), 0) + 1;
+      return;
+    }
+    this._ensureOneAdjacency(); // 极端兜底：强制造一对相邻同图案
+  }
+
+  // 横/竖相邻且图案相同的格子对数（衡量聚簇程度）。
+  _adjacencySamePairs() {
+    let n = 0;
     for (let r = 0; r < ROWS; r++)
       for (let c = 0; c < COLS; c++) {
-        const pattern = bag[bi++];
-        this.grid[r][c] = pattern;
-        this.blocks.push({ id: this.nextId++, pattern, r, c });
+        const v = this.grid[r][c];
+        if (!v) continue;
+        if (c + 1 < COLS && this.grid[r][c + 1] === v) n++;
+        if (r + 1 < ROWS && this.grid[r + 1][c] === v) n++;
       }
+    return n;
+  }
+
+  // 兜底：若随机布局完全没有相邻同图案，把同图案的两块移到相邻，保证有解。
+  _ensureOneAdjacency() {
+    const byPattern = new Map();
+    for (const b of this.blocks) {
+      if (!byPattern.has(b.pattern)) byPattern.set(b.pattern, []);
+      byPattern.get(b.pattern).push(b);
+    }
+    for (const [, list] of byPattern) {
+      if (list.length < 2) continue;
+      const a = list[0], b = list[1];
+      const nr = a.r, nc = a.c + 1 < COLS ? a.c + 1 : a.c - 1;
+      const x = this.blocks.find(bl => bl.r === nr && bl.c === nc);
+      if (!x) continue;
+      this.grid[a.r][a.c] = a.pattern;   // a 不动
+      this.grid[nr][nc] = b.pattern;     // b 移到 a 的相邻格
+      this.grid[b.r][b.c] = x.pattern;   // 原相邻格的块 x 移到 b 原位
+      x.r = b.r; x.c = b.c;
+      b.r = nr; b.c = nc;
+      return;
+    }
   }
 
   _shuffleArray(arr) {
@@ -435,14 +523,16 @@ const selfTests = {
     checks.push(c.getGrid().every(row => row.length === COLS));
     checks.push(c.getPatternCount() === TOTAL_BLOCKS);
     checks.push(c.getTotalPairs() === TOTAL_PAIRS);
-    let counts = new Array(PATTERNS + 1).fill(0);
+    const expected = countsForLevel(1);
+    const counts = new Array(expected.length + 1).fill(0);
     for (const b of c.getBlocks()) counts[b.pattern]++;
-    checks.push(counts.slice(1).every((n, i) => n === PATTERN_COUNTS[i]));
+    checks.push(expected.every((n, i) => counts[i + 1] === n));
+    checks.push(counts.slice(1).every(n => n > 0 && n % 2 === 0));
     let empty = 0;
     for (let r = 0; r < ROWS; r++)
       for (let col = 0; col < COLS; col++)
         if (c.getGrid()[r][col] === 0) empty++;
-    checks.push(empty === COLS * ROWS - TOTAL_BLOCKS);
+    checks.push(empty === 0);
     return checks;
   },
 
@@ -789,5 +879,7 @@ function runSelfTest(which = "all") {
 
 module.exports = {
   GameCore, selfTests, runSelfTest, coreWith,
-  ROWS, COLS, PATTERNS, PATTERN_COUNTS, TOTAL_BLOCKS, TOTAL_PAIRS,
+  ROWS, COLS, TOTAL_BLOCKS, TOTAL_PAIRS,
+  BASE_PATTERNS, MAX_PATTERNS, STEP_PATTERNS, MILESTONE, FIXED_LEVEL,
+  patternCountForLevel, countsForLevel, scrambleCapForLevel,
 };

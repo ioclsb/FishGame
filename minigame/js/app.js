@@ -30,7 +30,7 @@ function sysInfo() {
 
 class App {
   constructor() {
-    this.core = new GameCore();
+    this.core = new GameCore(this._loadLevel());
     this.streak = 0;
     this.stats = this._freshStats();
     this.busy = false;
@@ -632,7 +632,7 @@ class App {
     this.picking = null;
     this.streak = 0;
     this.stats = this._freshStats();
-    this.core.init();
+    this.core.init(this.uiState.level);
     this.view = new RenderView(this.boardCanvas, this.core, this.platform);
     this._wireView(this.view);
     this.uiState.stuck = false;

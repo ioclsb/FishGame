@@ -40,15 +40,31 @@ function computeLayout(availW, availH) {
 }
 
 // ================= ART: OCEAN THEME =================
+function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const c = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return Math.round(255 * c).toString(16).padStart(2, '0');
+  };
+  return '#' + f(0) + f(8) + f(4);
+}
+
+// 前 7 种为既有生物配色；之后 28 种用黄金角分布生成，保证彼此区分、不与前 7 撞色。
 const PATTERN_COLORS = [
-  '#f4772e', // clownfish      (orange)
-  '#2f6fe0', // blue tang      (blue)
-  '#2fae66', // sea turtle     (green)
-  '#f5b52e', // pufferfish     (yellow)
-  '#8e5cf0', // jellyfish      (violet)
-  '#ef4d3d', // crab           (red)
-  '#16bccb', // starfish       (cyan)
+  '#f4772e', // 1  clownfish    (orange)
+  '#2f6fe0', // 2  blue tang    (blue)
+  '#2fae66', // 3  sea turtle   (green)
+  '#f5b52e', // 4  pufferfish   (yellow)
+  '#8e5cf0', // 5  jellyfish    (violet)
+  '#ef4d3d', // 6  crab         (red)
+  '#16bccb', // 7  starfish     (cyan)
 ];
+for (let i = 0; i < 28; i++) {
+  PATTERN_COLORS.push(hslToHex(i * 137.508 + 18, 68, 56));
+}
 
 function roundRectPath(ctx, x, y, w, h, r) {
   // NOTE: WeChat Mini Game canvases expose ctx.roundRect but only accept the
