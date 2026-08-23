@@ -603,6 +603,17 @@ class RenderView {
       }
     }
 
+    // 小星星拖尾绘制在方块之前，使其出现在方块“身后”
+    for (const s of this.sparkles) {
+      const t = s.t / s.life;
+      const fade = Math.max(0, 1 - t);
+      const tw = 0.45 + 0.55 * Math.abs(Math.sin(s.t * 12 + s.ph));
+      ctx.globalAlpha = fade * tw;
+      const r = s.r * (0.7 + 0.3 * tw);
+      ctx.drawImage(RenderView._starSprite(s.color), s.x - r, s.y - r, r * 2, r * 2);
+      ctx.globalAlpha = 1;
+    }
+
     const blocks = this.core.getBlocks();
     for (let idx = 0; idx < blocks.length; idx++) {
       const block = blocks[idx];
@@ -670,15 +681,6 @@ class RenderView {
       if (r <= 0.1) continue;
       ctx.globalAlpha = Math.max(0, 1 - t);
       ctx.drawImage(RenderView._particleSprite(p.color), p.x - r, p.y - r, r * 2, r * 2);
-      ctx.globalAlpha = 1;
-    }
-    for (const s of this.sparkles) {
-      const t = s.t / s.life;
-      const fade = Math.max(0, 1 - t);
-      const tw = 0.45 + 0.55 * Math.abs(Math.sin(s.t * 12 + s.ph));
-      ctx.globalAlpha = fade * tw;
-      const r = s.r * (0.7 + 0.3 * tw);
-      ctx.drawImage(RenderView._starSprite(s.color), s.x - r, s.y - r, r * 2, r * 2);
       ctx.globalAlpha = 1;
     }
 
