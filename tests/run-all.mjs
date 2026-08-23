@@ -7,6 +7,7 @@ import path from 'node:path';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const suites = [
   ['core-selftest', 'run-core-tests.mjs'],
+  ['find-hint', 'find-hint.mjs'],
   ['interaction-smoke', 'smoke-interaction.mjs'],
   ['layout-viewport', 'layout-viewport.mjs'],
   ['solver-sim-150', 'solver-sim.mjs', ['150']],

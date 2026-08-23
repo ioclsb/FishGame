@@ -442,41 +442,39 @@ class GameCore {
 
   inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
 
+  // First non-empty cell along a ray from (r,c) in `dir`, honouring the slide
+  // overlay (occupied = the group's destination cells, vacated = its origin
+  // cells, now empty). Returns { r, c, v } or null when the ray runs off the
+  // board.
+  _firstInDir(r, c, dir, overlay) {
+    const d = GameCore.DIRS[dir];
+    let cr = r + d.dr, cc = c + d.dc;
+    while (this.inBounds(cr, cc)) {
+      const v = overlay
+        ? (overlay.occupied.has(cr + "," + cc) ? overlay.occupied.get(cr + "," + cc)
+          : overlay.vacated.has(cr + "," + cc) ? 0
+          : this.grid[cr][cc])
+        : this.grid[cr][cc];
+      if (v !== 0) return { r: cr, c: cc, v };
+      cr += d.dr;
+      cc += d.dc;
+    }
+    return null;
+  }
+
   checkMatch(r, c, overlay = null) {
     const pat = (overlay && overlay.occupied.has(r + "," + c))
       ? overlay.occupied.get(r + "," + c)
       : this.grid[r][c];
-    const scan = DEBUG_ENABLED ? [] : null;
     if (pat === 0) return null;
-    for (const dir of ['up', 'down', 'left', 'right']) {
-      const d = GameCore.DIRS[dir];
-      let cr = r + d.dr, cc = c + d.dc;
-      while (this.inBounds(cr, cc)) {
-        let v = 0;
-        if (overlay && overlay.occupied.has(cr + "," + cc)) {
-          v = overlay.occupied.get(cr + "," + cc);
-        } else if (overlay && overlay.vacated.has(cr + "," + cc)) {
-          v = 0;
-        } else {
-          v = this.grid[cr][cc];
-        }
-        if (v !== 0) {
-          if (scan) scan.push({ dir, hit: { r: cr, c: cc, v }, same: v === pat });
-          if (v === pat) {
-            if (!this._probing) dbg({ type: 'checkMatch', r, c, pat, overlay: overlay ? { vacated: [...overlay.vacated], occupied: [...overlay.occupied] } : null, result: { match: true, r: cr, c: cc, dir }, scan });
-            return { r: cr, c: cc };
-          }
-          if (scan) scan.push({ dir, result: 'blocked', by: { r: cr, c: cc, v }, expected: pat });
-          break; // blocked in this direction, try next
-        }
-        cr += d.dr;
-        cc += d.dc;
-      }
-      if (scan && !this.inBounds(cr, cc)) {
-        scan.push({ dir, result: 'boundary' });
+    for (const dir of Object.keys(GameCore.DIRS)) {
+      const hit = this._firstInDir(r, c, dir, overlay);
+      if (hit && hit.v === pat) {
+        if (!this._probing) dbg({ type: 'checkMatch', r, c, pat, overlay: overlay ? { vacated: [...overlay.vacated], occupied: [...overlay.occupied] } : null, result: { match: true, r: hit.r, c: hit.c, dir } });
+        return { r: hit.r, c: hit.c };
       }
     }
-    if (!this._probing) dbg({ type: 'checkMatch', r, c, pat, overlay: overlay ? { vacated: [...overlay.vacated], occupied: [...overlay.occupied] } : null, result: { match: false }, scan });
+    if (!this._probing) dbg({ type: 'checkMatch', r, c, pat, overlay: overlay ? { vacated: [...overlay.vacated], occupied: [...overlay.occupied] } : null, result: { match: false } });
     return null;
   }
 
@@ -514,6 +512,31 @@ class GameCore {
     return problems;
   }
 
+  // Build the slide overlay { vacated, occupied } for a group moving `dist`
+  // cells in `dir`. `vacated` = the group's origin cells (now empty),
+  // `occupied` = the group's destination cells carrying their pattern.
+  _slideOverlay(group, dir, dist) {
+    const d = GameCore.DIRS[dir];
+    const vacated = new Set();
+    const occupied = new Map();
+    for (const m of group) {
+      vacated.add(m.r + "," + m.c);
+      occupied.set((m.r + d.dr * dist) + "," + (m.c + d.dc * dist), this.grid[m.r][m.c]);
+    }
+    return { vacated, occupied };
+  }
+
+  // Shared pair-elimination bookkeeping: zero both cells, drop both blocks,
+  // count the cleared pair and run the invariant check.
+  _eliminatePair(aBlock, bBlock) {
+    const removedIds = [aBlock.id, bBlock.id];
+    this.grid[aBlock.r][aBlock.c] = 0;
+    this.grid[bBlock.r][bBlock.c] = 0;
+    this.blocks = this.blocks.filter(x => !removedIds.includes(x.id));
+    this.clearedPairs += 1;
+    return { removedIds, issues: this.consistencyCheck() };
+  }
+
   resolve(drag) {
     const { group, dir, dist } = drag;
     const d = GameCore.DIRS[dir];
@@ -524,16 +547,9 @@ class GameCore {
           group: group.map(m => ({ id: m.id, p: m.pattern, r: m.r, c: m.c })),
           aFinal: { r: aR, c: aC } });
 
-    const vacated = new Set();
-    const occupied = new Map();
+    const { vacated, occupied } = this._slideOverlay(group, dir, dist);
     const newPos = new Map(); // id -> {r,c}
-    for (const m of group) {
-      vacated.add(m.r + "," + m.c);
-      const nr = m.r + d.dr * dist;
-      const nc = m.c + d.dc * dist;
-      occupied.set(nr + "," + nc, this.grid[m.r][m.c]);
-      newPos.set(m.id, { r: nr, c: nc });
-    }
+    for (const m of group) newPos.set(m.id, { r: m.r + d.dr * dist, c: m.c + d.dc * dist });
 
     const hit = this.checkMatch(aR, aC, { vacated, occupied });
     if (!hit) {
@@ -543,29 +559,25 @@ class GameCore {
     }
 
     const target = { r: hit.r, c: hit.c };
-    const removedIds = [];
 
     this.pushSnapshot(); // snapshot the pre-elimination board (A at origin, group in place)
 
     const aBlock = this.findBlockByPos(a.r, a.c);
-    if (aBlock) { removedIds.push(aBlock.id); this.grid[aBlock.r][aBlock.c] = 0; }
-
     // B is the block at the hit position: it may be a group member's new
     // position (then its id is looked up at the ORIGINAL coords) or a
     // regular grid block.
     let bBlock = null;
-    for (const m of group) {
-      const np = newPos.get(m.id);
-      if (m.id !== (aBlock ? aBlock.id : -1) && np.r === hit.r && np.c === hit.c) {
-        bBlock = this.findBlockByPos(m.r, m.c);
-        break;
+    if (aBlock) {
+      for (const m of group) {
+        const np = newPos.get(m.id);
+        if (m.id !== aBlock.id && np.r === hit.r && np.c === hit.c) {
+          bBlock = this.findBlockByPos(m.r, m.c);
+          break;
+        }
       }
     }
     if (!bBlock) bBlock = this.findBlockByPos(hit.r, hit.c);
-    if (bBlock) { removedIds.push(bBlock.id); this.grid[bBlock.r][bBlock.c] = 0; }
-
-    this.blocks = this.blocks.filter(x => !removedIds.includes(x.id));
-    this.clearedPairs += 1;
+    const removedIds = (aBlock && bBlock) ? this._eliminatePair(aBlock, bBlock).removedIds : [];
 
     const moved = [];
     // Move surviving members atomically: first clear every member's original
@@ -609,25 +621,9 @@ class GameCore {
       : this.grid[r][c];
     if (pat === 0) return null;
     const targets = [];
-    for (const dir of ['up', 'down', 'left', 'right']) {
-      const d = GameCore.DIRS[dir];
-      let cr = r + d.dr, cc = c + d.dc;
-      while (this.inBounds(cr, cc)) {
-        let v = 0;
-        if (overlay && overlay.occupied.has(cr + "," + cc)) {
-          v = overlay.occupied.get(cr + "," + cc);
-        } else if (overlay && overlay.vacated.has(cr + "," + cc)) {
-          v = 0;
-        } else {
-          v = this.grid[cr][cc];
-        }
-        if (v !== 0) {
-          if (v === pat) targets.push({ r: cr, c: cc, dir });
-          break;
-        }
-        cr += d.dr;
-        cc += d.dc;
-      }
+    for (const dir of Object.keys(GameCore.DIRS)) {
+      const hit = this._firstInDir(r, c, dir, overlay);
+      if (hit && hit.v === pat) targets.push({ r: hit.r, c: hit.c, dir });
     }
     // A multi-choice overlay is only needed when there are 2+ match targets.
     if (targets.length < 2) return null;
@@ -646,12 +642,7 @@ class GameCore {
     if (!aBlock || !bBlock || aBlock.pattern !== bBlock.pattern) {
       return { matched: false, removedIds: [] };
     }
-    const removedIds = [aBlock.id, bBlock.id];
-    this.grid[aBlock.r][aBlock.c] = 0;
-    this.grid[bBlock.r][bBlock.c] = 0;
-    this.blocks = this.blocks.filter(x => !removedIds.includes(x.id));
-    this.clearedPairs += 1;
-    const issues = this.consistencyCheck();
+    const { removedIds, issues } = this._eliminatePair(aBlock, bBlock);
     dbg({ type: 'resolvePair', r, c, tr, tc, removedIds, consistency: issues });
     return { matched: true, removedIds, target: { r: tr, c: tc } };
   }
@@ -707,13 +698,12 @@ class GameCore {
       return { matched: false, target: null, removedIds: [] };
     }
     const bBlock = this.findBlockByPos(hit.r, hit.c);
-    const removedIds = [];
+    if (!bBlock) {
+      dbg({ type: 'clickResolve', r, c, matched: false });
+      return { matched: false, target: null, removedIds: [] };
+    }
     this.pushSnapshot(); // snapshot the pre-elimination board
-    if (aBlock) { removedIds.push(aBlock.id); this.grid[aBlock.r][aBlock.c] = 0; }
-    if (bBlock) { removedIds.push(bBlock.id); this.grid[bBlock.r][bBlock.c] = 0; }
-    this.blocks = this.blocks.filter(x => !removedIds.includes(x.id));
-    this.clearedPairs += 1;
-    const issues = this.consistencyCheck();
+    const { removedIds, issues } = this._eliminatePair(aBlock, bBlock);
     dbg({ type: 'clickResolve', r, c, matched: true, target: hit, removedIds, consistency: issues });
     return { matched: true, target: hit, removedIds };
   }
@@ -776,12 +766,7 @@ class GameCore {
   simulateSlide(group, dir, dist, fn) {
     const d = GameCore.DIRS[dir];
     const saved = group.map(m => ({ r: m.r, c: m.c, pattern: this.grid[m.r][m.c] }));
-    const vacated = new Set();
-    const occupied = new Map();
-    for (const m of saved) {
-      vacated.add(m.r + "," + m.c);
-      occupied.set((m.r + d.dr * dist) + "," + (m.c + d.dc * dist), m.pattern);
-    }
+    const { vacated, occupied } = this._slideOverlay(group, dir, dist);
     for (const m of saved) this.grid[m.r][m.c] = 0;
     for (const m of saved) this.grid[m.r + d.dr * dist][m.c + d.dc * dist] = m.pattern;
     const a = group[0];
@@ -795,17 +780,31 @@ class GameCore {
   findHint() {
     this._probing = true;
     try {
-    for (const block of this.blocks) {
-      for (const dir of Object.keys(GameCore.DIRS)) {
-        const group = this.getPushGroup(block.r, block.c, dir);
-        if (!group) continue;
-        const dist = this.getMaxSlideDistance(group, dir);
-        if (dist === 0) continue;
-        const target = this.simulateSlide(group, dir, dist, (ar, ac, overlay) => this.checkMatch(ar, ac, overlay));
-        if (target) return { blockId: block.id, dir, dist, target, group };
+      for (const block of this.blocks) {
+        for (const dir of Object.keys(GameCore.DIRS)) {
+          const group = this.getPushGroup(block.r, block.c, dir);
+          if (!group) continue;
+          const maxDist = this.getMaxSlideDistance(group, dir);
+          if (maxDist === 0) continue;
+          // The player may release at ANY cell 1..maxDist (point-slide), so a
+          // match can exist at an intermediate stop even when the max-distance
+          // stop misses. Check every reachable distance, longest first so the
+          // hint still prefers the farthest slide when one works.
+          for (let dist = maxDist; dist >= 1; dist--) {
+            const target = this.simulateSlide(group, dir, dist, (ar, ac, overlay) => this.checkMatch(ar, ac, overlay));
+            if (target) return { blockId: block.id, dir, dist, target, group };
+          }
+        }
       }
-    }
-    return null;
+      // Fallback: a same-pattern block directly on a clear ray can be
+      // eliminated by TAPPING (no slide). That is a real move, so a board is
+      // only "unsolvable" when neither a slide nor a tap can eliminate. Tap
+      // hints are reported with dir:null / dist:0 / group:null.
+      for (const block of this.blocks) {
+        const target = this.checkMatch(block.r, block.c);
+        if (target) return { blockId: block.id, dir: null, dist: 0, target, group: null };
+      }
+      return null;
     } finally {
       this._probing = false;
     }
@@ -862,18 +861,10 @@ const selfTests = {
   },
 
   match() {
-    const c = new GameCore();
     const checks = [];
     // Scenario A: same-pattern block is the first block along a ray with
     // empty cells between. Board: (0,0)=A pat1, (0,3)=B pat1, empty between.
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[0][0] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 0, c: 0 });
-    c.grid[0][3] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 0, c: 3 });
-    c.grid[2][0] = 2; c.blocks.push({ id: c.nextId++, pattern: 2, r: 2, c: 0 });
-
+    let c = coreWith([[0, 0, 1], [0, 3, 1], [2, 0, 2]]);
     const hit = c.checkMatch(0, 0);
     checks.push(hit !== null && hit.r === 0 && hit.c === 3);
 
@@ -885,15 +876,9 @@ const selfTests = {
     // empty (4,1..3). Walk right from (4,0) stops at empty (4,1), so the
     // group is just A; front=A; empties (4,1..3)=3 => dist=3. A lands at
     // (4,3), ray to the right hits B at (4,4) => match.
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[4][0] = 1; const aId = c.nextId++;
-    c.blocks.push({ id: aId, pattern: 1, r: 4, c: 0 });
-    c.grid[4][4] = 1; const bId = c.nextId++;
-    c.blocks.push({ id: bId, pattern: 1, r: 4, c: 4 });
-
+    c = coreWith([[4, 0, 1], [4, 4, 1]]);
+    const aId = c.findBlockByPos(4, 0).id;
+    const bId = c.findBlockByPos(4, 4).id;
     const group = c.getPushGroup(4, 0, 'right');
     const dist = c.getMaxSlideDistance(group, 'right');
     // Walk from (4,0) stops at empty (4,1); front=A; empties (4,1..3)=3; dist=3.
@@ -907,12 +892,7 @@ const selfTests = {
     checks.push(c.getGrid()[4][0] === 0);
 
     // Scenario D: miss => no mutation at all (deterministic).
-    const c2 = new GameCore();
-    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c2.blocks = [];
-    c2.clearedPairs = 0;
-    c2.nextId = 1;
-    c2.grid[0][0] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 0, c: 0 });
+    const c2 = coreWith([[0, 0, 1]]);
     const before = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks(), cp: c2.getClearedPairs() });
     const grp = c2.getPushGroup(0, 0, 'up');
     const dd = c2.getMaxSlideDistance(grp, 'up');
@@ -969,16 +949,8 @@ const selfTests = {
     // A(3,4)p1, M1(2,4)p2, M2(1,4)p2, B(2,7)p1, empty(2,5)(2,6).
     // Drag A UP by dist=1: A->(2,4), M1->(1,4), M2->(0,4). A ray-right
     // matches B at (2,7). A+B removed; M1,M2 survive and slide by 1.
-    const c = new GameCore();
+    const c = coreWith([[3, 4, 1], [2, 4, 2], [1, 4, 3], [2, 7, 1]]);
     const checks = [];
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[3][4] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 3, c: 4 }); // A
-    c.grid[2][4] = 2; c.blocks.push({ id: c.nextId++, pattern: 2, r: 2, c: 4 }); // M1
-    c.grid[1][4] = 3; c.blocks.push({ id: c.nextId++, pattern: 3, r: 1, c: 4 }); // M2
-    c.grid[2][7] = 1; c.blocks.push({ id: c.nextId++, pattern: 1, r: 2, c: 7 }); // B
 
     const group = c.getPushGroup(3, 4, 'up');
     const dist = c.getMaxSlideDistance(group, 'up');
@@ -1008,15 +980,8 @@ const selfTests = {
     // Regression: a drag may stop at an INTERMEDIATE cell (not max distance)
     // and match there. A(2,7)p5, M(2,6)p3, B(0,5)p5, empty(1,5).
     // Drag A LEFT by 2 -> A lands (2,5), ray up hits (0,5) p5 -> match.
-    const c = new GameCore();
+    const c = coreWith([[2, 7, 5], [2, 6, 3], [0, 5, 5]]);
     const checks = [];
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[2][7] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 2, c: 7 }); // A
-    c.grid[2][6] = 3; c.blocks.push({ id: c.nextId++, pattern: 3, r: 2, c: 6 }); // M
-    c.grid[0][5] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 0, c: 5 }); // B
 
     const group = c.getPushGroup(2, 7, 'left');
     const maxDist = c.getMaxSlideDistance(group, 'left');
@@ -1044,16 +1009,10 @@ const selfTests = {
     // Feature: tapping a block (no drag) that satisfies a normal match
     // condition (same pattern reachable along a clear ray) eliminates both
     // blocks. A(2,7)p5, B(0,7)p5, empty(1,7) between -> click A matches B.
-    const c = new GameCore();
+    const c = coreWith([[2, 7, 5], [0, 7, 5]]);
+    const aId = c.findBlockByPos(2, 7).id;
+    const bId = c.findBlockByPos(0, 7).id;
     const checks = [];
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[2][7] = 5; const aId = c.nextId++;
-    c.blocks.push({ id: aId, pattern: 5, r: 2, c: 7 }); // A
-    c.grid[0][7] = 5; const bId = c.nextId++;
-    c.blocks.push({ id: bId, pattern: 5, r: 0, c: 7 }); // B (cross-gap match)
 
     const res = c.clickResolve(2, 7);
     checks.push(res.matched === true);
@@ -1065,14 +1024,7 @@ const selfTests = {
     checks.push(c.getGrid()[2][7] === 0 && c.getGrid()[0][7] === 0);
 
     // Blocked by an intervening different pattern -> no match, no mutation.
-    const c2 = new GameCore();
-    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c2.blocks = [];
-    c2.clearedPairs = 0;
-    c2.nextId = 1;
-    c2.grid[4][0] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 4, c: 0 });
-    c2.grid[4][2] = 3; c2.blocks.push({ id: c2.nextId++, pattern: 3, r: 4, c: 2 }); // blocker
-    c2.grid[4][4] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 4, c: 4 });
+    const c2 = coreWith([[4, 0, 1], [4, 2, 3], [4, 4, 1]]);
     const before = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks(), cp: c2.getClearedPairs() });
     const res2 = c2.clickResolve(4, 0);
     const after = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks(), cp: c2.getClearedPairs() });
@@ -1086,18 +1038,11 @@ const selfTests = {
     // a multi-choice. A(4,3)p4 can match right -> B1(4,6)p4 and down ->
     // B2(6,3)p4. findMultiMatches must report both; resolvePair must eliminate
     // A and the CHOSEN target in place (no movement).
-    const c = new GameCore();
+    const c = coreWith([[4, 3, 4], [4, 6, 4], [6, 3, 4]]);
+    const aId = c.findBlockByPos(4, 3).id;
+    const b1Id = c.findBlockByPos(4, 6).id;
+    const b2Id = c.findBlockByPos(6, 3).id;
     const checks = [];
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[4][3] = 4; const aId = c.nextId++;
-    c.blocks.push({ id: aId, pattern: 4, r: 4, c: 3 }); // A
-    c.grid[4][6] = 4; const b1Id = c.nextId++;
-    c.blocks.push({ id: b1Id, pattern: 4, r: 4, c: 6 }); // B1 (right)
-    c.grid[6][3] = 4; const b2Id = c.nextId++;
-    c.blocks.push({ id: b2Id, pattern: 4, r: 6, c: 3 }); // B2 (down)
 
     const multi = c.findMultiMatches(4, 3);
     checks.push(multi !== null && Array.isArray(multi));
@@ -1116,13 +1061,7 @@ const selfTests = {
     checks.push(c.consistencyCheck().length === 0);
 
     // Only ONE matching direction -> no multi (returns null).
-    const c3 = new GameCore();
-    c3.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c3.blocks = [];
-    c3.clearedPairs = 0;
-    c3.nextId = 1;
-    c3.grid[2][2] = 5; c3.blocks.push({ id: c3.nextId++, pattern: 5, r: 2, c: 2 });
-    c3.grid[2][4] = 5; c3.blocks.push({ id: c3.nextId++, pattern: 5, r: 2, c: 4 }); // only horizontal
+    const c3 = coreWith([[2, 2, 5], [2, 4, 5]]);
     checks.push(c3.findMultiMatches(2, 2) === null);
 
     // Empty cell / out of bounds -> null.
@@ -1135,18 +1074,11 @@ const selfTests = {
     // commits via applySlide, then resolvePair works at the committed position,
     // and revertSlide undoes it on cancel. A(3,2)p4 slides right 1 to (3,3)
     // where it can match right -> B1(3,5)p4 and down -> B2(5,3)p4.
-    const c = new GameCore();
+    const c = coreWith([[3, 2, 4], [3, 5, 4], [5, 3, 4]]);
+    const aId = c.findBlockByPos(3, 2).id;
+    const b1Id = c.findBlockByPos(3, 5).id;
+    const b2Id = c.findBlockByPos(5, 3).id;
     const checks = [];
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[3][2] = 4; const aId = c.nextId++;
-    c.blocks.push({ id: aId, pattern: 4, r: 3, c: 2 }); // A
-    c.grid[3][5] = 4; const b1Id = c.nextId++;
-    c.blocks.push({ id: b1Id, pattern: 4, r: 3, c: 5 }); // B1 right (gap 3,3 3,4)
-    c.grid[5][3] = 4; const b2Id = c.nextId++;
-    c.blocks.push({ id: b2Id, pattern: 4, r: 5, c: 3 }); // B2 down (gap 4,3)
 
     const group = c.getPushGroup(3, 2, 'right');
     const d = GameCore.DIRS['right'];
@@ -1174,14 +1106,7 @@ const selfTests = {
     checks.push(c.findBlockByPos(5, 3) === null);
 
     // revertSlide: apply then revert leaves the board unchanged.
-    const c2 = new GameCore();
-    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c2.blocks = [];
-    c2.clearedPairs = 0;
-    c2.nextId = 1;
-    c2.grid[3][2] = 4; c2.blocks.push({ id: c2.nextId++, pattern: 4, r: 3, c: 2 });
-    c2.grid[3][5] = 4; c2.blocks.push({ id: c2.nextId++, pattern: 4, r: 3, c: 5 });
-    c2.grid[5][3] = 4; c2.blocks.push({ id: c2.nextId++, pattern: 4, r: 5, c: 3 });
+    const c2 = coreWith([[3, 2, 4], [3, 5, 4], [5, 3, 4]]);
     const g2 = c2.getPushGroup(3, 2, 'right');
     const before = JSON.stringify({ grid: c2.getGrid(), blocks: c2.getBlocks().map(b=>[b.r,b.c,b.pattern]) });
     const mv = c2.applySlide(g2, 'right', 1);
@@ -1197,19 +1122,13 @@ const selfTests = {
     // (member N's destination == member N+1's origin), coordinate-based
     // lookup re-captured an already-moved block, corrupting the blocks table
     // so the subsequent multi-pick resolvePair silently failed.
-    const c = new GameCore();
+    const c = coreWith([[4, 4, 1], [3, 4, 2], [2, 4, 3], [2, 6, 1], [6, 4, 1]]);
     const checks = [];
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
     // chain col4: A(4,4)p1 -> M1(3,4)p2 -> M2(2,4)p3, empties above
-    const mk = (r, cc, p) => { const b = { id: c.nextId++, pattern: p, r, c: cc }; c.grid[r][cc] = p; c.blocks.push(b); return b; };
-    const A = mk(4, 4, 1);
-    const M1 = mk(3, 4, 2);
-    const M2 = mk(2, 4, 3);
-    const B1 = mk(2, 6, 1);  // right target after commit (gap at (2,5))
-    mk(6, 4, 1);             // down target after commit (gaps above)
+    const A = c.findBlockByPos(4, 4);
+    const M1 = c.findBlockByPos(3, 4);
+    const M2 = c.findBlockByPos(2, 4);
+    const B1 = c.findBlockByPos(2, 6);  // right target after commit (gap at (2,5))
 
     const group = c.getPushGroup(4, 4, 'up');
     checks.push(group.length === 3);
@@ -1234,12 +1153,7 @@ const selfTests = {
     checks.push(c.findBlockByPos(M1.r, M1.c).pattern === 2); // survivors untouched
 
     // apply/revert round-trip leaves zero diff on a fresh board
-    const c2 = new GameCore();
-    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c2.blocks = [];
-    c2.clearedPairs = 0;
-    c2.nextId = 1;
-    [[4, 4, 1], [3, 4, 2], [2, 4, 3]].forEach(([r, cc, p]) => { c2.grid[r][cc] = p; c2.blocks.push({ id: c2.nextId++, pattern: p, r, c: cc }); });
+    const c2 = coreWith([[4, 4, 1], [3, 4, 2], [2, 4, 3]]);
     const snapBefore = JSON.stringify({ g: c2.getGrid(), b: c2.getBlocks().map(b=>[b.id,b.r,b.c,b.pattern]) });
     const mv2 = c2.applySlide(c2.getPushGroup(4, 4, 'up'), 'up', 2);
     c2.revertSlide(mv2);
@@ -1251,13 +1165,7 @@ const selfTests = {
   undo() {
     const checks = [];
     // Single-step undo of a tap elimination. A(2,7)p5, B(0,7)p5, gap (1,7).
-    const c = new GameCore();
-    c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c.blocks = [];
-    c.clearedPairs = 0;
-    c.nextId = 1;
-    c.grid[2][7] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 2, c: 7 }); // A
-    c.grid[0][7] = 5; c.blocks.push({ id: c.nextId++, pattern: 5, r: 0, c: 7 }); // B
+    const c = coreWith([[2, 7, 5], [0, 7, 5]]);
     checks.push(c.canUndo() === false);               // nothing to undo yet
 
     const res = c.clickResolve(2, 7);
@@ -1279,15 +1187,7 @@ const selfTests = {
     checks.push(c.undo() === false);
 
     // Drag elimination undo restores A's original position and the moved group.
-    const c2 = new GameCore();
-    c2.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    c2.blocks = [];
-    c2.clearedPairs = 0;
-    c2.nextId = 1;
-    c2.grid[3][4] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 3, c: 4 }); // A
-    c2.grid[2][4] = 2; c2.blocks.push({ id: c2.nextId++, pattern: 2, r: 2, c: 4 }); // M1
-    c2.grid[1][4] = 3; c2.blocks.push({ id: c2.nextId++, pattern: 3, r: 1, c: 4 }); // M2
-    c2.grid[2][7] = 1; c2.blocks.push({ id: c2.nextId++, pattern: 1, r: 2, c: 7 }); // B
+    const c2 = coreWith([[3, 4, 1], [2, 4, 2], [1, 4, 3], [2, 7, 1]]);
     const group = c2.getPushGroup(3, 4, 'up');
     const dist = c2.getMaxSlideDistance(group, 'up');
     const res2 = c2.resolve({ group, dir: 'up', dist });
@@ -1305,6 +1205,22 @@ const selfTests = {
     return checks;
   },
 };
+
+// Test fixture: a fresh GameCore with an exact block placement. Entries are
+// [r, c, pattern] triples; all other cells stay empty. Keeps the many board
+// setups in the self-test suites free of the repeated 5-line reset.
+function coreWith(entries) {
+  const c = new GameCore();
+  c.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+  c.blocks = [];
+  c.clearedPairs = 0;
+  c.nextId = 1;
+  for (const [r, cc, p] of entries) {
+    c.grid[r][cc] = p;
+    c.blocks.push({ id: c.nextId++, pattern: p, r, c: cc });
+  }
+  return c;
+}
 
 function runSelfTest(which = "all") {
   const failures = [];
@@ -2296,6 +2212,26 @@ class RenderView {
     this.render();
   }
 
+  // Shared elimination choreography: flash the two vanishing cells, animate,
+  // then clear + repaint and fire onDone. Used by drag resolve, tap resolve
+  // and multi-choice pick so all three feel identical.
+  playElimination(cellA, cellB, pattern, onDone) {
+    const ax = cellA.c * G.pitch, ay = cellA.r * G.pitch;
+    const tp = this.gridToPixel(cellB.r, cellB.c);
+    this.elimFlash = {
+      t0: performance.now(),
+      dur: 350,
+      ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
+      pattern,
+    };
+    this.render();
+    this._animateUntil(350, () => this.render(), () => {
+      this.elimFlash = null;
+      this.render();
+      if (onDone) onDone();
+    });
+  }
+
   snapAndResolve(onDone) {
     if (!this.drag) { onDone && onDone(); return; }
     const cellPx = G.pitch;
@@ -2366,26 +2302,11 @@ class RenderView {
       const res = this.core.resolve({ group, dir, dist });
       if (res.match) {
         const a = group[0];
-        const ax = (a.c + d.dc * dist) * cellPx;
-        const ay = (a.r + d.dr * dist) * cellPx;
-        const tp = this.gridToPixel(res.target.r, res.target.c);
+        const cellA = { r: a.r + d.dr * dist, c: a.c + d.dc * dist };
         if (this.onMatchFx) {
-          this.onMatchFx({
-            cells: [{ r: a.r + d.dr * dist, c: a.c + d.dc * dist }, { ...res.target }],
-            pattern: group[0].pattern,
-          });
+          this.onMatchFx({ cells: [cellA, { ...res.target }], pattern: group[0].pattern });
         }
-        this.elimFlash = {
-          t0: performance.now(),
-          dur: 350,
-          ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
-          pattern: group[0].pattern,
-        };
-        this._animateUntil(this.elimFlash.dur, () => this.render(), () => {
-          this.elimFlash = null;
-          this.render();
-          onDone && onDone();
-        });
+        this.playElimination(cellA, res.target, group[0].pattern, () => onDone && onDone());
       } else {
         if (this.onRevert) this.onRevert(); // drag ended with no match -> revert sound
         this.revert = { group, dir, offsetPx: to, fromPx: to };
@@ -2807,7 +2728,8 @@ class App {
         this.view.render();
         const hinted = this.core.getBlocks().find((b) => b.id === h.blockId);
         const species = hinted ? PATTERN_NAMES[hinted.pattern - 1] : '';
-        this.setMsg(species ? `提示：推动${species}即可消除` : '提示：推动该方块即可消除');
+        const verb = h.dir === null ? '点击' : '推动';
+        this.setMsg(species ? `提示：${verb}${species}即可消除` : `提示：${verb}该方块即可消除`);
       } else {
         this.view.hint = null;
         this.view.render();
@@ -2965,23 +2887,8 @@ class App {
           const tappedPattern = this.core.inBounds(clickRc.r, clickRc.c) ? this.core.getGrid()[clickRc.r][clickRc.c] : 0;
           const res = this.core.clickResolve(clickRc.r, clickRc.c);
           if (res.matched) {
-            const cellPx = G.pitch;
-            const ax = clickRc.c * cellPx;
-            const ay = clickRc.r * cellPx;
-            const tp = this.view.gridToPixel(res.target.r, res.target.c);
             this._registerMatch([clickRc, { ...res.target }], tappedPattern);
-            this.view.elimFlash = {
-              t0: performance.now(),
-              dur: 350,
-              ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
-              pattern: tappedPattern,
-            };
-            this.view.render();
-            this.view._animateUntil(350, () => this.view.render(), () => {
-              this.view.elimFlash = null;
-              this.view.render();
-              this._finishAction();
-            });
+            this.view.playElimination(clickRc, res.target, tappedPattern, () => this._finishAction());
           } else {
             // No match on tap (released without matching): play the click
             // sound and show the same-pattern pulse as feedback.
@@ -3048,22 +2955,8 @@ class App {
     this.picking = null;
     this.view.pick = null;
     if (res.matched) {
-      const cellPx = G.pitch;
-      const ax = c * cellPx, ay = r * cellPx;
-      const tp = this.view.gridToPixel(tr, tc);
       this._registerMatch([{ r, c }, { r: tr, c: tc }], pattern);
-      this.view.elimFlash = {
-        t0: performance.now(),
-        dur: 350,
-        ghosts: [{ x: ax, y: ay }, { x: tp.x, y: tp.y }],
-        pattern,
-      };
-      this.view.render();
-      this.view._animateUntil(350, () => this.view.render(), () => {
-        this.view.elimFlash = null;
-        this.view.render();
-        this._finishAction();
-      });
+      this.view.playElimination({ r, c }, { r: tr, c: tc }, pattern, () => this._finishAction());
     } else {
       this.busy = false;
     }

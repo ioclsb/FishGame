@@ -42,7 +42,11 @@ node tests/layout-viewport.mjs         # 8 device profiles / 40 checks
 
 # solver simulation: plays N full games through GameCore (greedy hint chase
 # + shuffle on deadlock) and reports winnability/deadlock statistics
-node tests/solver-sim.mjs 300          # 100% winnable, ~0.8 shuffles/game
+node tests/solver-sim.mjs 300          # 100% winnable, ~0.06 shuffles/game
+
+# no-solution correctness: findHint vs a brute-force move oracle across
+# mid-game states, plus intermediate-distance (point-slide) and tap-only cases
+node tests/find-hint.mjs
 ```
 
 The page also embeds `window.runSelfTest(which)` asserting push-group
@@ -182,7 +186,9 @@ depend on it, never the reverse.
 
 Deadlock handling: after every board change the app probes `findHint()`;
 when nothing can eliminate, the shuffle button pulses and a toast suggests
-reshuffling.
+reshuffling. `findHint()` is exact: it checks EVERY reachable slide distance
+(1..maxDist, so intermediate point-slides count) and falls back to tap-to-match,
+so "no hint" really means no legal move exists.
 
 ## 9. Debugging
 

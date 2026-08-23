@@ -26,8 +26,16 @@ for (let g = 0; g < games; g++) {
       shuffles++;
       continue;
     }
-    const res = c.resolve({ group: hint.group, dir: hint.dir, dist: hint.dist });
-    if (!res.match) throw new Error('hint failed to match - invariant broken');
+    let res, ok;
+    if (hint.dir === null) {
+      const blk = c.blocks.find(b => b.id === hint.blockId);
+      res = c.clickResolve(blk.r, blk.c);
+      ok = res.matched;
+    } else {
+      res = c.resolve({ group: hint.group, dir: hint.dir, dist: hint.dist });
+      ok = res.match;
+    }
+    if (!ok) throw new Error('hint failed to match - invariant broken');
     if (c.consistencyCheck().length > 0) {
       throw new Error('consistency violation after resolve');
     }

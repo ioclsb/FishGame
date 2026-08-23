@@ -57,6 +57,15 @@ function hintDrag(h, observe) {
   const hint = a.core.findHint();
   if (!hint) return false;
   const blk = a.core.getBlocks().find((b) => b.id === hint.blockId);
+  if (hint.dir === null) {
+    // Tap hint: a same-pattern block on a clear ray - fire a short tap.
+    const start = h.centerPx(blk.r, blk.c);
+    fire(h.el('board'), 'pointerdown', { pointerId: 21, clientX: start.x, clientY: start.y });
+    steps(h, 20);
+    fire(h.el('board'), 'pointerup', { pointerId: 21 });
+    steps(h, 900, observe);
+    return true;
+  }
   const d = DIRS[hint.dir];
   const start = h.centerPx(blk.r, blk.c);
   const end = {
