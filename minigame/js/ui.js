@@ -16,10 +16,10 @@ const BTN_DEFS = [
 
 // Card colors for the icon buttons — a deep blue echoing the board water.
 const BTN_COLORS = {
-  undo: '#2b6b8f',
-  shuffle: '#2b6b8f',
-  hint: '#2b6b8f',
-  settings: '#2b6b8f',
+  undo: '#15405c',
+  shuffle: '#15405c',
+  hint: '#15405c',
+  settings: '#15405c',
 };
 
 class UI {
@@ -513,8 +513,8 @@ class UI {
     ctx.beginPath();
     roundRectPath(ctx, c.x, c.y, c.w, c.h, 22);
     const g = ctx.createLinearGradient(0, c.y, 0, c.y + c.h);
-    g.addColorStop(0, 'rgba(28,64,102,0.92)');
-    g.addColorStop(1, 'rgba(10,30,54,0.95)');
+    g.addColorStop(0, 'rgba(13,36,58,0.92)');
+    g.addColorStop(1, 'rgba(3,14,28,0.95)');
     ctx.fillStyle = g;
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';
@@ -638,8 +638,8 @@ class UI {
     ctx.beginPath();
     roundRectPath(ctx, cx, cy, cardW, cardH, 24);
     const g = ctx.createLinearGradient(0, cy, 0, cy + cardH);
-    g.addColorStop(0, 'rgba(28,64,102,0.92)');
-    g.addColorStop(1, 'rgba(10,30,54,0.95)');
+    g.addColorStop(0, 'rgba(13,36,58,0.92)');
+    g.addColorStop(1, 'rgba(3,14,28,0.95)');
     ctx.fillStyle = g;
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';
@@ -689,8 +689,8 @@ class UI {
     ctx.beginPath();
     roundRectPath(ctx, cx, cy, cardW, cardH, 26);
     const g = ctx.createLinearGradient(0, cy, 0, cy + cardH);
-    g.addColorStop(0, 'rgba(28,64,102,0.9)');
-    g.addColorStop(1, 'rgba(10,30,54,0.94)');
+    g.addColorStop(0, 'rgba(13,36,58,0.9)');
+    g.addColorStop(1, 'rgba(3,14,28,0.94)');
     ctx.fillStyle = g;
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';

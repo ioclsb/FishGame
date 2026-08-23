@@ -472,9 +472,9 @@ class RenderView {
     const BW = G.boardW, BH = G.boardH;
 
     const water = ctx.createLinearGradient(0, 0, BW * 0.25, BH);
-    water.addColorStop(0, '#2b6b8f');
-    water.addColorStop(0.5, '#1b4a68');
-    water.addColorStop(1, '#113351');
+    water.addColorStop(0, '#173f59');
+    water.addColorStop(0.5, '#0e2a3e');
+    water.addColorStop(1, '#061b2c');
     ctx.fillStyle = water;
     ctx.fillRect(0, 0, BW, BH);
 
@@ -492,9 +492,9 @@ class RenderView {
       }
     }
 
-    const vig = ctx.createRadialGradient(BW / 2, BH / 2, BH * 0.42, BW / 2, BH / 2, BH * 0.75);
-    vig.addColorStop(0, 'rgba(0,8,20,0)');
-    vig.addColorStop(1, 'rgba(0,8,20,0.26)');
+    const vig = ctx.createRadialGradient(BW / 2, BH / 2, BH * 0.42, BW / 2, BH / 2, BH * 0.78);
+    vig.addColorStop(0, 'rgba(0,6,16,0)');
+    vig.addColorStop(1, 'rgba(0,6,16,0.40)');
     ctx.fillStyle = vig;
     ctx.fillRect(0, 0, BW, BH);
 
