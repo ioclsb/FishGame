@@ -38,6 +38,7 @@ class UI {
     this.settingsCloseBtn = null; // {x, y, w, h}
     this.settingsRestartBtn = null; // {x, y, w, h}
     this.pressId = null; // 底部按钮按压反馈：'settingsRestart' | 'settingsClose'
+    this.winPressId = null; // 结算“再来一局”按压反馈
     this.confetti = [];         // active confetti pieces
     this.fishX = 0;             // animated fish position along the bar
     this._lastT = 0;
@@ -58,13 +59,18 @@ class UI {
     const barY = board.y - 34;
     this.progress = { x: barX, y: barY, w: barW, h: barH, labelY: barY - 12 };
 
-    // main buttons: centered below the board, generous spacing
+    // main buttons: 居中横向排布于棋盘下方，整体上移、与棋盘下边缘留出间距
     const btnR = W < 360 ? 20 : 23;
     const gap = Math.max(18, Math.round(W * 0.05));
     const btnArea = BTN_DEFS.length * (btnR * 2) + (BTN_DEFS.length - 1) * gap;
     const startX = Math.round((W - btnArea) / 2);
     const bottomLine = layout.height - (layout.safeBottom || 0);
-    const btnY = Math.round(board.y + board.h + (bottomLine - (board.y + board.h)) / 2);
+    const areaH = bottomLine - (board.y + board.h);
+    // 上移：从棋盘下边缘留一点间距起步，但保证按钮下方文字不超出屏幕
+    const fromBoard = Math.max(12, Math.round(areaH * 0.20));
+    let btnY = board.y + board.h + fromBoard + btnR;
+    btnY = Math.min(btnY, bottomLine - btnR - 16);
+    btnY = Math.round(btnY);
     this.buttons = BTN_DEFS.map((b, i) => ({
       id: b.id,
       label: b.label,
@@ -250,8 +256,8 @@ class UI {
       ctx.fillText(`${Math.round(pct)}%`, pctX, fy);
       // level badge above the bar
       this._drawLevelBadge(ctx, p.x + p.w / 2, p.y - 16);
-      // fish swimming along the bar following progress
-      this._drawBarFish(ctx, this.fishX, fy, now);
+      // fish swimming along the bar following progress; 颜色随进度走彩虹
+      this._drawBarFish(ctx, this.fishX, fy, now, Math.round(ratio * 300));
     }
 
     // main buttons: 3D card row below the board
@@ -291,8 +297,8 @@ class UI {
   }
 
   // Small fish swimming on the progress bar: bobs gently and wags its tail.
-  // Orange body + white outline so it stands out against the light-blue fill.
-  _drawBarFish(ctx, x, y, now) {
+  // 颜色随进度走彩虹（hue 由调用方按 ratio*300 传入），白描边保证在浅蓝条上醒目。
+  _drawBarFish(ctx, x, y, now, hue = 40) {
     const bob = Math.sin(now * 0.006) * 1.8;
     const wag = Math.sin(now * 0.012) * 1.5;
     ctx.save();
@@ -305,12 +311,12 @@ class UI {
     ctx.lineTo(-10, 5 + wag);
     ctx.lineTo(-6.5, 2.5);
     ctx.closePath();
-    ctx.fillStyle = '#f5b400';
+    ctx.fillStyle = `hsl(${(hue + 340) % 360},85%,52%)`;
     ctx.fill();
     // body
     ctx.beginPath();
     ctx.ellipse(0, 0, 7, 4.2, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffce3a';
+    ctx.fillStyle = `hsl(${hue},85%,58%)`;
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.95)';
     ctx.lineWidth = 1.2;
@@ -762,7 +768,7 @@ class UI {
     this._updateConfetti(now);
 
     const cardW = Math.min(L.width * 0.8, 320);
-    const cardH = 230;
+    const cardH = 210;
     const cx = (L.width - cardW) / 2;
     const cy = (L.height - cardH) / 2;
 
@@ -783,22 +789,26 @@ class UI {
 
     // trophy
     ctx.save();
-    ctx.translate(cx + cardW / 2, cy + 48);
+    ctx.translate(cx + cardW / 2, cy + 46);
     this._drawTrophy(ctx);
     ctx.restore();
 
+    // 标题（去掉用时/消除/提示/最佳等成绩统计）
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffd54f';
     ctx.font = rf('800', 26);
-    ctx.fillText('恭喜通关', cx + cardW / 2, cy + 108);
+    ctx.fillText('恭喜通关', cx + cardW / 2, cy + 104);
 
-    ctx.fillStyle = 'rgba(234,246,255,0.85)';
-    ctx.font = rf('500', 13);
-    ctx.fillText(s.win.statsText, cx + cardW / 2, cy + 138);
-
+    // “再来一局”：按压时缩小、平时轻微呼吸缩放（放大缩小效果）
     const bw = 170, bh = 46;
-    const bx = cx + (cardW - bw) / 2, by = cy + cardH - 66;
+    const bx = cx + (cardW - bw) / 2, by = cy + cardH - 58;
+    const pressing = this.winPressId === 'winRestart';
+    const sc = pressing ? 0.94 : (1 + 0.04 * Math.sin(now * 0.006));
+    ctx.save();
+    ctx.translate(bx + bw / 2, by + bh / 2);
+    ctx.scale(sc, sc);
+    ctx.translate(-(bx + bw / 2), -(by + bh / 2));
     ctx.beginPath();
     roundRectPath(ctx, bx, by, bw, bh, bh / 2);
     const g2 = ctx.createLinearGradient(0, by, 0, by + bh);
@@ -809,6 +819,7 @@ class UI {
     ctx.fillStyle = '#fff';
     ctx.font = rf('700', 16);
     ctx.fillText('再来一局', bx + bw / 2, by + bh / 2 + 1);
+    ctx.restore();
     this.winBtn = { x: bx, y: by, w: bw, h: bh };
   }
 

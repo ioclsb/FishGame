@@ -72,7 +72,7 @@ class SoundManager {
     this.enabled = on;
     try { storage.set('psm.sound', on ? 'on' : 'off'); } catch (e) {}
     if (this.master && this.ctx) {
-      this.master.gain.setTargetAtTime(on ? 0.5 : 0.0001, this.ctx.currentTime, 0.02);
+      this.master.gain.setTargetAtTime(on ? 0.8 : 0.0001, this.ctx.currentTime, 0.02);
     }
     if (on) this._initOnFirstUse();
   }
@@ -101,7 +101,7 @@ class SoundManager {
       // 所以无条件 resume（对 running 的 ctx 调用无害）
       try { if (this.ctx.resume) this.ctx.resume(); } catch (e) {}
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.enabled ? 0.5 : 0.0001;
+      this.master.gain.value = this.enabled ? 0.8 : 0.0001;
       this.comp = this.ctx.createDynamicsCompressor();
       this.comp.threshold.value = -18;
       this.comp.knee.value = 24;
@@ -261,36 +261,37 @@ class SoundManager {
     this._initOnFirstUse();
     const tier = SoundManager.tierForStreak(combo);
     // 轻快灵动：明亮正弦上滑作主音，叠高八度点缀，连击再升一档
-    this._tone(740, 0.12, 'sine', 0.16, 0, 980, 0, 0.008);
-    this._tone(1100, 0.10, 'sine', 0.10, 0.05, 1320, 0, 0.008);
-    if (tier > 1) this._tone(1480, 0.09, 'sine', 0.08, 0.10, 1660);
+    this._tone(740, 0.12, 'sine', 0.26, 0, 980, 0, 0.008);
+    this._tone(1100, 0.10, 'sine', 0.16, 0.05, 1320, 0, 0.008);
+    if (tier > 1) this._tone(1480, 0.09, 'sine', 0.12, 0.10, 1660);
   }
 
   release() {
     this._initOnFirstUse();
-    this._tone(420, 0.13, 'sine', 0.16, 0, 270);
-    this._noise(0.12, 0.05, 1600, 400);
+    this._tone(420, 0.13, 'sine', 0.28, 0, 270);
+    this._noise(0.12, 0.10, 1600, 400);
   }
 
   click() {
     this._initOnFirstUse();
-    this._tone(300, 0.08, 'sine', 0.12, 0, 210);
+    // 点击音效：整体偏小，频率提亮、音量上调，手机上更清脆可闻
+    this._tone(460, 0.09, 'sine', 0.36, 0, 300);
   }
 
   pick() {
     this._initOnFirstUse();
-    this._tone(620, 0.07, 'triangle', 0.20, 0, 800, 0, 0.004);
+    this._tone(620, 0.07, 'triangle', 0.30, 0, 800, 0, 0.004);
   }
 
   ui() {
     this._initOnFirstUse();
-    this._tone(820, 0.04, 'square', 0.06);
+    this._tone(820, 0.04, 'square', 0.14);
   }
 
   shuffleSfx() {
     this._initOnFirstUse();
-    this._noise(0.28, 0.18, 300, 2400);
-    this._tone(220, 0.18, 'sine', 0.10, 0.02, 330);
+    this._noise(0.28, 0.26, 300, 2400);
+    this._tone(220, 0.18, 'sine', 0.16, 0.02, 330);
   }
 
   win() {

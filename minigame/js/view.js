@@ -25,6 +25,9 @@ const G = { cell: 64, gap: 4, pitch: 68, boardW: 640, boardH: 640, dpr: 1 };
 const DPR_CAP = 2;
 const CELL_MAX = 80;
 
+// 棋盘背景统一为整片蓝色（去掉浅色渐变与格子浅色叠层）
+const BOARD_BG = '#103e66';
+
 function computeLayout(availW, availH) {
   const w = Math.max(160, availW);
   const h = Math.max(160, availH);
@@ -304,15 +307,16 @@ class RenderView {
 
   _initBubbles() {
     this.bubbles = [];
-    const n = Math.max(8, Math.round(G.boardW / 48));
+    // 数量更多、大小差异更大
+    const n = Math.max(20, Math.round(G.boardW / 22));
     for (let i = 0; i < n; i++) {
       this.bubbles.push({
         x: Math.random() * G.boardW,
         y: Math.random() * G.boardH,
-        r: G.cell * (0.035 + Math.random() * 0.045),
-        sp: G.cell * (0.12 + Math.random() * 0.28),
+        r: G.cell * (0.02 + Math.random() * 0.18),
+        sp: G.cell * (0.12 + Math.random() * 0.34),
         ph: Math.random() * Math.PI * 2,
-        a: 0.07 + Math.random() * 0.11,
+        a: 0.05 + Math.random() * 0.13,
       });
     }
   }
@@ -488,31 +492,8 @@ class RenderView {
     ctx.scale(this.dpr, this.dpr);
     const BW = G.boardW, BH = G.boardH;
 
-    const water = ctx.createLinearGradient(0, 0, BW * 0.25, BH);
-    water.addColorStop(0, '#173f59');
-    water.addColorStop(0.5, '#0e2a3e');
-    water.addColorStop(1, '#061b2c');
-    ctx.fillStyle = water;
-    ctx.fillRect(0, 0, BW, BH);
-
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const x = c * G.pitch, y = r * G.pitch;
-        ctx.save();
-        ctx.beginPath(); roundRectPath(ctx, x, y, G.cell, G.cell, G.cell * 0.22);
-        ctx.fillStyle = 'rgba(255,255,255,0.07)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.09)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    const vig = ctx.createRadialGradient(BW / 2, BH / 2, BH * 0.42, BW / 2, BH / 2, BH * 0.78);
-    vig.addColorStop(0, 'rgba(0,6,16,0)');
-    vig.addColorStop(1, 'rgba(0,6,16,0.40)');
-    ctx.fillStyle = vig;
+    // 整片纯蓝：去掉浅色渐变、格子浅色叠层与暗角，保持统一
+    ctx.fillStyle = BOARD_BG;
     ctx.fillRect(0, 0, BW, BH);
 
     this.bg = bg;
@@ -640,10 +621,7 @@ class RenderView {
       if (!REDUCED_MOTION) {
         const lt = (now - this.spawnT0 - Math.min(idx * 9, 420)) / 240;
         if (lt < 0) scale *= 0.0001;
-        else if (lt < 1) {
-          const c1 = 1.70158, c3 = c1 + 1, u = lt - 1;
-          scale *= 1 + c3 * u * u * u + c1 * u * u;
-        }
+        else if (lt < 1) scale *= lt; // 线性展开入场（从 0 等比放大到 1）
       }
       this.drawBlock(block, x, y, scale, rot);
     }

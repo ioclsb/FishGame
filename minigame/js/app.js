@@ -12,7 +12,7 @@ require('./debug.js');
 
 const DEBUG = GLOBAL.__DEBUG_ENABLED === true;
 // 开发跳关：设为目标关（如 36）启动即直跳该关；用毕改回 0 恢复常规进度。
-const JUMP_TO_LEVEL = 36;
+const JUMP_TO_LEVEL = 1;
 const PATTERN_NAMES = ['小丑鱼', '蓝倒吊', '绿海龟', '河豚', '紫水母', '小红蟹'];
 // 顶部设置按钮与安全区之间的留白
 const TOP_PAD = 12;
@@ -409,7 +409,7 @@ class App {
     if (hit) {
       if (hit.zone === 'overlay') {
         if (hit.id === 'coachStart') this._dismissCoach();
-        else if (hit.id === 'winRestart') this.restart();
+        else if (hit.id === 'winRestart') { this.ui.winPressId = 'winRestart'; this.sound.ui(); return; }
         else if (hit.id === 'settingsClose') this.uiState.settings = false;
         else if (hit.id === 'settingsSound') this._toggleSound();
         else if (hit.id === 'settingsVibrate') this._toggleVibrate();
@@ -464,7 +464,7 @@ class App {
     const dy = y - this.press.startY;
 
     if (!this.press.axis) {
-      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+       if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
       const isH = Math.abs(dx) >= Math.abs(dy);
       const dir = isH ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
       const group = this.core.getPushGroup(this.press.r, this.press.c, dir);
@@ -507,6 +507,13 @@ class App {
         this.uiState.settings = false;
         this.view.render();
       }
+      return;
+    }
+    // 结算“再来一局”：按住时缩小、松开触发重开（呈现按压点击效果）
+    if (this.ui.winPressId) {
+      const id = this.ui.winPressId;
+      this.ui.winPressId = null;
+      if (id === 'winRestart') this.restart();
       return;
     }
     if (!this.busy) return;
@@ -587,25 +594,8 @@ class App {
     // 每通过一关，关卡数 +1 并持久化
     this.uiState.level = Math.max(1, (this.uiState.level || 1) + 1);
     try { storage.set('psm.level', String(this.uiState.level)); } catch (e) {}
-    const secs = Math.max(0, Math.round((performance.now() - this.stats.t0) / 1000));
-    const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-    const extras = [];
-    if (this.stats.hints) extras.push(`提示 ×${this.stats.hints}`);
-    if (this.stats.undos) extras.push(`撤销 ×${this.stats.undos}`);
-    let best = null;
-    try { best = parseInt(storage.get('psm.bestTime'), 10) || null; } catch (e) {}
-    let recordTag = '';
-    if (!best || secs < best) {
-      best = secs;
-      try { storage.set('psm.bestTime', String(secs)); } catch (e) {}
-      recordTag = ' · 新纪录！';
-    } else {
-      extras.push(`最佳 ${fmt(best)}`);
-    }
-    this.uiState.win = {
-      statsText: `用时 ${fmt(secs)} · 消除 ${this.stats.moves} 对` +
-        (extras.length ? ' · ' + extras.join(' · ') : '') + recordTag,
-    };
+    // 结算界面仅保留“恭喜通关”与“再来一局”，不再展示用时/消除/提示/最佳统计
+    this.uiState.win = {};
     this.sound.win();
     this.vibrate([16, 40, 16, 40, 60]);
     this.ui.spawnConfetti();
@@ -641,6 +631,7 @@ class App {
 
   restart() {
     this.uiState.win = null;
+    this.ui.winPressId = null;
     RenderView.setPaused(false);
     if (this.view) this.view._bumpToken();
     this.busy = false;
