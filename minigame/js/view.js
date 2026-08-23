@@ -522,14 +522,15 @@ class RenderView {
       }
     }
 
-    let pulseScale = 0;
+    let pulseAngle = 0;
     let pulsePattern = null;
     if (this.bounce) {
       const t = Math.min(1, (performance.now() - this.bounce.t0) / this.bounce.dur);
       if (t < 1) {
         pulsePattern = this.bounce.pattern;
-        const amp = (1 - t) * 0.22;
-        pulseScale = Math.sin(t * Math.PI) * amp;
+        // 同色方块来回晃动约 ±9°，幅度随时间衰减
+        const ampRad = (1 - t) * 0.16;
+        pulseAngle = Math.sin(t * Math.PI * 2.5) * ampRad;
       } else {
         this.bounce = null;
       }
@@ -542,7 +543,8 @@ class RenderView {
       const x = pos ? pos.x : block.c * G.pitch;
       const y = pos ? pos.y : block.r * G.pitch;
       let scale = 1;
-      if (pulsePattern !== null && block.pattern === pulsePattern) scale += pulseScale;
+      let rot = 0;
+      if (pulsePattern !== null && block.pattern === pulsePattern) rot = pulseAngle;
       if (!REDUCED_MOTION) {
         const lt = (now - this.spawnT0 - Math.min(idx * 9, 420)) / 240;
         if (lt < 0) scale *= 0.0001;
@@ -551,7 +553,7 @@ class RenderView {
           scale *= 1 + c3 * u * u * u + c1 * u * u;
         }
       }
-      this.drawBlock(block, x, y, scale);
+      this.drawBlock(block, x, y, scale, rot);
     }
 
     if (this.hint) {
@@ -668,14 +670,19 @@ class RenderView {
     }
   }
 
-  drawBlock(block, x, y, scale = 1) {
-    if (scale === 1) {
-      this.ctx.drawImage(RenderView.spriteFor(block.pattern), x, y, G.cell, G.cell);
+  drawBlock(block, x, y, scale = 1, rot = 0) {
+    const img = RenderView.spriteFor(block.pattern);
+    if (scale === 1 && !rot) {
+      this.ctx.drawImage(img, x, y, G.cell, G.cell);
       return;
     }
     const cx = x + G.cell / 2, cy = y + G.cell / 2;
     const w = G.cell * scale, h = G.cell * scale;
-    this.ctx.drawImage(RenderView.spriteFor(block.pattern), cx - w / 2, cy - h / 2, w, h);
+    this.ctx.save();
+    this.ctx.translate(cx, cy);
+    if (rot) this.ctx.rotate(rot);
+    this.ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    this.ctx.restore();
   }
 
   triggerBounce(pattern) {
