@@ -102,7 +102,23 @@ depend on it, never the reverse.
 - Backing store density capped at `DPR_CAP = 2.5`; canvas CSS size always
   equals logical size so pointer math stays exact.
 - Sprites cache per `(pattern, cell, dpr)`, background rebuilds on relayout;
-  resize/orientationchange/visualViewport events are rAF-throttled.
+  resize/orientationchange/visualViewport events are debounced (120ms) and
+  hysteresis-filtered (`maybeRelayout`, <24px jitter ignored) - this breaks
+  the mobile URL-bar resize feedback storm. `resize()` itself is a no-op when
+  dimensions did not change, so redundant events never re-allocate the
+  canvas buffer.
+
+## 5b. Rendering budget
+
+- One continuous rAF loop serves all effects. It skips work entirely when
+  the tab is hidden or a modal overlay is open (`RenderView.setPaused`),
+  and drops to ~30fps when idle (only ambient bubbles move); drags,
+  particles, hints and the pick overlay restore full-rate rendering
+  (`isBusyFrame()`).
+- No `backdrop-filter` sits above the animating canvas (#msg toast and HUD
+  buttons use solid translucency) - blur layers over a changing backdrop
+  force a full re-composite every frame on mobile GPUs.
+- Confetti nodes self-remove via animationend plus a 4s timeout fallback.
 
 ## 6. Art pipeline
 

@@ -74,10 +74,9 @@
   #controls button {
     width: 42px; height: 42px; padding: 0;
     border-radius: 50%; border: 1px solid rgba(255,255,255,0.22);
-    background: rgba(255,255,255,0.12); color: #fff;
+    background: rgba(30,58,88,0.85); color: #fff;
     cursor: pointer; touch-action: manipulation;
     display: flex; align-items: center; justify-content: center;
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     box-shadow: 0 3px 10px rgba(0,0,0,0.28);
     transition: transform 0.08s ease, background 0.15s ease;
   }
@@ -124,13 +123,12 @@
   #msg {
     position: absolute; left: 50%; bottom: 2%;
     transform: translateX(-50%) translateY(6px);
-    background: rgba(6,22,40,0.82);
+    background: rgba(6,22,40,0.92);
     border: 1px solid rgba(255,255,255,0.16);
     color: #ffd54f; font-size: 13.5px; font-weight: 600;
     padding: 8px 16px; border-radius: 999px; white-space: nowrap;
     opacity: 0; pointer-events: none;
     transition: opacity 0.25s ease, transform 0.25s ease;
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     max-width: 92%; text-overflow: ellipsis; overflow: hidden;
   }
   #msg.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -1570,20 +1568,38 @@ class RenderView {
   }
 
   // Continuous frame loop: drives particles, ambient bubbles and any timed
-  // effect without per-animation bookkeeping. Idles cheaply when hidden.
+  // effect without per-animation bookkeeping. Battery/perf friendly:
+  //  - skips entirely when the tab is hidden or a modal overlay froze the view
+  //  - drops to ~30fps when idle (only ambient bubbles animate), back to
+  //    full 60fps while dragging, effects, hints or the pick overlay are live
   startLoop() {
     if (RenderView._looping) return;
-    const step = () => {
+    let lastRender = 0;
+    const step = (tms) => {
       RenderView._raf = requestAnimationFrame(step);
       const view = RenderView._active;
-      if (!view || document.hidden) return;
+      if (!view || document.hidden || RenderView._paused) return;
       view._updateEffects(performance.now());
-      view.render();
+      const t = performance.now();
+      if (view.isBusyFrame() || t - lastRender >= 33) {
+        view.render();
+        lastRender = t;
+      }
     };
     RenderView._looping = true;
     RenderView._active = this;
     RenderView._raf = requestAnimationFrame(step);
   }
+
+  // True while anything demands full-rate rendering.
+  isBusyFrame() {
+    return !!(this.drag || this.revert || this.pick || this.bounce ||
+              this.hint || this.elimFlash ||
+              this.particles.length > 0 || this.rings.length > 0);
+  }
+
+  // Freeze/unfreeze the whole frame loop (modal overlays, win screen).
+  static setPaused(p) { RenderView._paused = p; }
 
   static setActiveView(view) {
     RenderView._active = view;
@@ -1647,9 +1663,17 @@ class RenderView {
   resize() {
     computeLayout();
     const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const bw = Math.round(G.size * dpr);
+    // Guard the backing store: assigning canvas.width reallocates the whole
+    // buffer in Chrome, so skip when nothing actually changed (this is what
+    // makes viewport jitter cheap instead of a re-allocation storm).
+    if (this.canvas.width === bw && this.canvas.height === bw && G.dpr === dpr &&
+        this.canvas.style.width === G.size + 'px') {
+      return;
+    }
     G.dpr = dpr;
-    this.canvas.width = G.size * dpr;
-    this.canvas.height = G.size * dpr;
+    this.canvas.width = bw;
+    this.canvas.height = bw;
     this.canvas.style.width = G.size + 'px';
     this.canvas.style.height = G.size + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2341,16 +2365,21 @@ class App {
   }
 
   // Keep the board fitted to the viewport across rotation, browser chrome
-  // show/hide and window resizing. rAF-throttled to avoid layout thrash.
+  // show/hide and window resizing. Two guards prevent the classic mobile
+  // feedback storm (URL bar toggles -> canvas resize -> layout shift -> URL
+  // bar toggles...): a trailing debounce plus a hysteresis threshold, and
+  // resize() itself is a no-op when dimensions did not change.
   _bindViewport() {
-    let scheduled = false;
+    let timer = null;
+    const apply = () => {
+      timer = null;
+      const wrap = document.getElementById('boardWrap');
+      if (!wrap) return;
+      this.maybeRelayout(wrap.clientWidth, wrap.clientHeight);
+    };
     const onResize = () => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
-        this.view.relayout();
-      });
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(apply, 120);
     };
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
@@ -2368,6 +2397,15 @@ class App {
         dbg({ type: 'unhandledRejection', reason: String(ev.reason) });
       });
     }
+  }
+
+  // Relayout only when the available box changed meaningfully (<24px deltas
+  // are browser-chrome jitter, e.g. the URL bar sliding away).
+  maybeRelayout(w, h) {
+    if (this._vpW > 0 && Math.abs(w - this._vpW) < 24 && Math.abs(h - this._vpH) < 24) return;
+    this._vpW = w;
+    this._vpH = h;
+    this.view.relayout();
   }
 
   // Attach per-view callbacks. Called when the view is created or rebuilt
@@ -2473,8 +2511,10 @@ class App {
     if (coached) return;
     const el = document.getElementById('coach');
     el.classList.remove('hidden');
+    RenderView.setPaused(true); // freeze the canvas behind the modal
     const dismiss = () => {
       el.classList.add('hidden');
+      RenderView.setPaused(false);
       try { localStorage.setItem('psm.coached', '1'); } catch (e) {}
       this.sound.ui();
     };
@@ -2754,6 +2794,7 @@ class App {
     this.sound.win();
     this.vibrate([16, 40, 16, 40, 60]);
     spawnConfetti(document.getElementById('winOverlay'));
+    RenderView.setPaused(true); // freeze the canvas behind the modal
     document.getElementById('winOverlay').classList.remove('hidden');
     document.getElementById('btnShuffle').classList.remove('attention');
   }
@@ -2767,6 +2808,7 @@ class App {
     this.stats.undos++;
     this.streak = 0;
     this.core.undo();
+    RenderView.setPaused(false); // undo can dismiss the win screen
     // Reset any transient view/input state and repaint from the restored board.
     if (this.view) this.view._bumpToken();
     this.view.drag = null;
@@ -2788,6 +2830,7 @@ class App {
   restart() {
     dbg({ type: 'restart' });
     document.getElementById('winOverlay').classList.add('hidden');
+    RenderView.setPaused(false); // dialogs (win) may have frozen the loop
     if (this.view) this.view._bumpToken(); // cancel any running animation
     this.busy = false;
     this.press = null;
@@ -2819,6 +2862,8 @@ function spawnConfetti(container) {
     p.style.animationDelay = (Math.random() * 0.5) + 's';
     p.style.setProperty('--drift', (Math.random() * 120 - 60) + 'px');
     p.addEventListener('animationend', () => p.remove());
+    // Safety net: if the overlay is hidden mid-fall, animationend never fires.
+    setTimeout(() => p.remove(), 4000);
     container.appendChild(p);
   }
 }

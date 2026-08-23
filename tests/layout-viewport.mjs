@@ -35,7 +35,8 @@ for (const [w, h, dpr, label] of CASES) {
   const fits = G.size <= Math.min(w, h) + 0.001;
   const cellOk = G.cell >= 10;
   const cssMatches = el('board').style.width === G.size + 'px';
-  const backing = Math.abs(el('board').width - G.size * Math.min(dpr, 2.5)) < 0.01;
+  const cap = Math.min(dpr, 2.5);
+  const backing = Math.abs(el('board').width - Math.round(G.size * cap)) < 0.01;
   check(`${label}: board fits`, fits, `${G.size}px vs box ${w}x${h}`);
   check(`${label}: cell size sane`, cellOk, `cell=${G.cell}`);
   check(`${label}: css size matches`, cssMatches);
@@ -55,6 +56,25 @@ wrapEl._wrapW = 500; wrapEl._wrapH = 700;
 app().view.relayout(); flush(30);
 check('rotation: portrait refit equals min(w,h) fit', G.size === landscapeSize && G.size <= 500,
   `${landscapeSize} -> ${G.size}`);
+
+// resize-storm guard: sub-24px jitter (URL bar sliding) must not relayout
+{
+  const a = app();
+  a._vpW = -1; a._vpH = -1; // reset viewport memory like a fresh page
+  wrapEl._wrapW = 400; wrapEl._wrapH = 620;
+  a.maybeRelayout(400, 620);
+  const baseSize = G.size;
+  let changed = false;
+  for (let i = 0; i < 40; i++) {
+    a.maybeRelayout(400 + (i % 2) * 12, 620 + (i % 3) * 8); // jitter
+    if (G.size !== baseSize) { changed = true; break; }
+  }
+  check('storm: 40 jittered resizes do not relayout', !changed, `size stayed ${G.size}`);
+  wrapEl._wrapW = 520; wrapEl._wrapH = 720;
+  a.maybeRelayout(520, 720);
+  check('storm: real change still applies', G.size !== baseSize && G.size <= 520,
+    `${baseSize} -> ${G.size}`);
+}
 
 console.log(failed === 0 ? 'LAYOUT PASS' : `LAYOUT FAIL (${failed})`);
 process.exit(failed === 0 ? 0 : 1);
