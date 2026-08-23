@@ -11,17 +11,19 @@ const COLS = 10, ROWS = 14;      // 竖屏 10x14 布局
 const TOTAL_BLOCKS = COLS * ROWS; // 棋盘铺满 = 140 块
 const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 70 对
 
-// 关卡难度曲线：图案数随关卡阶梯式增加，到固定关后不再新增、难度固定。
-const BASE_PATTERNS = 7;   // 第 1 关图案数
+// 关卡难度曲线：图案数随关卡“前快后平”地增长，到固定关后不再新增、难度固定。
+// 前期（前 50 关）图案数增长更快，避免少数图案反复出现导致聚堆、过于简单。
+const BASE_PATTERNS = 7;   // 第 1 关图案数（温和教学关）
 const MAX_PATTERNS = 35;   // 最终图案数（每种 4 块 = 140，铺满且全偶数）
-const STEP_PATTERNS = 2;   // 每个里程碑新增图案数
-const MILESTONE = 35;      // 每 35 关为一个里程碑（+2 种）
-const FIXED_LEVEL = 491;   // 35 种在此关引入完毕（7 + 2*14 = 35，1+14*35=491），之后难度固定
+const FIXED_LEVEL = 300;   // 35 种在此关引入完毕，之后难度固定
 
+// ease-out 曲线：t∈[0,1]，(1-(1-t)²) 在前期上升快、后期趋平。
 function patternCountForLevel(level) {
   const L = Math.max(1, level | 0);
-  const steps = Math.floor((L - 1) / MILESTONE);
-  return Math.min(MAX_PATTERNS, BASE_PATTERNS + steps * STEP_PATTERNS);
+  const t = Math.min(1, Math.max(0, (L - 1) / (FIXED_LEVEL - 1)));
+  const eased = 1 - (1 - t) * (1 - t);
+  const P = Math.round(BASE_PATTERNS + (MAX_PATTERNS - BASE_PATTERNS) * eased);
+  return Math.min(MAX_PATTERNS, Math.max(BASE_PATTERNS, P));
 }
 
 // 把 140 块按偶数均衡分配给 P 种图案（和=140，每种均为偶数，可两两消完）。
@@ -37,12 +39,16 @@ function countsForLevel(level) {
   return counts;
 }
 
-// 相邻同图案上限：随关卡连续收紧（前期松、固定关最紧），越高越难找配对。
-function scrambleCapForLevel(level) {
+// 相邻同图案“目标上限”：以随机铺满的期望对数 256/P 为基准，
+// 乘一个随关卡收紧的系数（前期接近随机=宽松，后期压到约 1/3=难）。
+// 生成时把相邻同图案对数压到该上限以下，即“去聚堆”，让同图案尽量分散。
+function targetAdjacencyForLevel(level) {
   const P = patternCountForLevel(level);
+  const adjTotal = COLS * (ROWS - 1) + (COLS - 1) * ROWS; // 棋盘全部相邻边数 = 256
+  const randomExp = adjTotal / P;                         // 随机铺满的期望相邻同图案对数
   const t = Math.min(1, Math.max(0, (Math.max(1, level) - 1) / (FIXED_LEVEL - 1)));
-  const k = 1.3 - t * (1.3 - 0.5);
-  return Math.max(1, Math.round((COLS * (ROWS - 1) + (COLS - 1) * ROWS) / P * k));
+  const ratio = 0.9 - t * (0.9 - 0.33);                   // L1≈0.9（接近随机）… L300≈0.33
+  return Math.max(1, Math.round(randomExp * ratio));
 }
 
 
@@ -74,33 +80,93 @@ class GameCore {
     this.undoSnapshot = null;   // a fresh board has no undo history
 
     const counts = countsForLevel(this.level);
-    const cap = scrambleCapForLevel(this.level);
-    let fallback = null; // 最接近（相邻同图案最少且≥1）的布局
-    for (let attempt = 0; attempt < 400; attempt++) {
+    const target = targetAdjacencyForLevel(this.level);
+
+    // 多次尝试：随机铺底 + 贪心去聚堆，直到“有可点开局(≥1对)且达到目标上限”。
+    let fallback = null; // 最接近目标（相邻同图案最少且≥1）的布局
+    for (let attempt = 0; attempt < 60; attempt++) {
       const bag = [];
       counts.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(i + 1); });
       this._shuffleArray(bag);
       let bi = 0;
       for (let r = 0; r < ROWS; r++)
-        for (let c = 0; c < COLS; c++) {
-          const pattern = bag[bi++];
-          this.grid[r][c] = pattern;
-          this.blocks.push({ id: this.nextId++, pattern, r, c });
-        }
+        for (let c = 0; c < COLS; c++)
+          this.grid[r][c] = bag[bi++];
+
+      this._declutter(target); // 原地交换去聚堆，保持各图案数量不变
+
       const adj = this._adjacencySamePairs();
-      if (adj >= 1 && adj <= cap) return; // 既“活”又够打散
-      if (adj >= 1 && (!fallback || adj < fallback.adj)) fallback = { adj, grid: this.grid.map(row => row.slice()), blocks: this.blocks.map(b => ({ ...b })) };
-      // 重置以便下次尝试
-      this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-      this.blocks = [];
+      if (adj >= 1 && adj <= target) break;       // 既“活”（可点开局）又够打散
+      if (adj >= 1 && (!fallback || adj < fallback.adj)) {
+        fallback = { adj, grid: this.grid.map(row => row.slice()) };
+      }
+      this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0)); // 重置以便下次尝试
     }
-    if (fallback) {
-      this.grid = fallback.grid;
-      this.blocks = fallback.blocks;
-      this.nextId = this.blocks.reduce((m, b) => Math.max(m, b.id), 0) + 1;
-      return;
+    if (fallback) this.grid = fallback.grid;
+
+    // 由最终 grid 重建 blocks
+    this.blocks = [];
+    this.nextId = 1;
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        const v = this.grid[r][c];
+        if (v) this.blocks.push({ id: this.nextId++, pattern: v, r, c });
+      }
+
+    if (this._adjacencySamePairs() < 1) this._ensureOneAdjacency(); // 极端兜底：保证至少可点开局
+  }
+
+  // 贪心交换去聚堆：把相邻同图案对数压到 target 以下，但始终保持 ≥1 对（保证可点开局）。
+  // 交换只是“互换两个格子的图案”，各图案出现次数天然不变。
+  _declutter(target) {
+    let cur = this._adjacencySamePairs();
+    if (cur <= target) return;
+    let iters = 0;
+    const MAX_ITERS = 1500;
+    while (cur > target && iters < MAX_ITERS) {
+      iters++;
+      const pair = this._randomAdjacentSamePair();
+      if (!pair) break;
+      const [, b] = pair;
+      const v = this.grid[pair[0].r][pair[0].c];
+      const c = this._randomCellWithPatternNot(v);
+      if (!c) break;
+      const bPat = this.grid[b.r][b.c];
+      const cPat = this.grid[c.r][c.c];
+      this.grid[b.r][b.c] = cPat;
+      this.grid[c.r][c.c] = bPat;
+      const newAdj = this._adjacencySamePairs();
+      if (newAdj >= 1 && newAdj < cur) {
+        cur = newAdj;            // 接受：更分散且仍留至少一对可点
+      } else {
+        this.grid[b.r][b.c] = bPat; // 撤销
+        this.grid[c.r][c.c] = cPat;
+      }
     }
-    this._ensureOneAdjacency(); // 极端兜底：强制造一对相邻同图案
+  }
+
+  // 随机取一对横/竖相邻的同图案格。
+  _randomAdjacentSamePair() {
+    const pairs = [];
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++) {
+        const v = this.grid[r][c];
+        if (!v) continue;
+        if (c + 1 < COLS && this.grid[r][c + 1] === v) pairs.push([{ r, c }, { r, c: c + 1 }]);
+        if (r + 1 < ROWS && this.grid[r + 1][c] === v) pairs.push([{ r, c }, { r: r + 1, c }]);
+      }
+    if (!pairs.length) return null;
+    return pairs[Math.floor(Math.random() * pairs.length)];
+  }
+
+  // 随机取一个图案不同于 pat 的格子（用于交换去聚堆）。
+  _randomCellWithPatternNot(pat) {
+    const cand = [];
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (this.grid[r][c] !== null && this.grid[r][c] !== pat) cand.push({ r, c });
+    if (!cand.length) return null;
+    return cand[Math.floor(Math.random() * cand.length)];
   }
 
   // 横/竖相邻且图案相同的格子对数（衡量聚簇程度）。
@@ -880,6 +946,6 @@ function runSelfTest(which = "all") {
 module.exports = {
   GameCore, selfTests, runSelfTest, coreWith,
   ROWS, COLS, TOTAL_BLOCKS, TOTAL_PAIRS,
-  BASE_PATTERNS, MAX_PATTERNS, STEP_PATTERNS, MILESTONE, FIXED_LEVEL,
-  patternCountForLevel, countsForLevel, scrambleCapForLevel,
+  BASE_PATTERNS, MAX_PATTERNS, FIXED_LEVEL,
+  patternCountForLevel, countsForLevel, targetAdjacencyForLevel,
 };
