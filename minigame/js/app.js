@@ -12,6 +12,14 @@ require('./debug.js');
 
 const DEBUG = GLOBAL.__DEBUG_ENABLED === true;
 const PATTERN_NAMES = ['小丑鱼', '蓝倒吊', '绿海龟', '河豚', '紫水母', '小红蟹'];
+// 顶部设置按钮与安全区之间的留白
+const TOP_PAD = 12;
+// 左上角设置按钮半径
+const SETTINGS_R = 20;
+// 棋盘下方按钮行区域高度
+const BTN_AREA = 56;
+// 棋盘外框向内收的距离，四周露出页面留白
+const BOARD_PAD = 8;
 
 function sysInfo() {
   return wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
@@ -51,10 +59,13 @@ class App {
     this.uiState = {
       progress: { cleared: 0, total: this.core.getTotalPairs(), pct: 0 },
       soundOn: this.sound.enabled,
+      vibrate: this._loadVibrate(),
       stuck: false,
       msg: null,
       coach: false,
       win: null,
+      settings: false,
+      level: this._loadLevel(),
     };
     this.ui = new UI(this);
     this.ui.setLayout({
@@ -64,6 +75,7 @@ class App {
       safeTop: this.safeTop,
       safeBottom: this.safeBottom,
       hudH: this.hudH,
+      progTop: this.progTop,
       board: this.boardRect,
     });
 
@@ -74,11 +86,25 @@ class App {
   }
 
   // ---- layout -----------------------------------------------------------
+  _loadLevel() {
+    try {
+      const v = parseInt(storage.get('psm.level'), 10);
+      return Number.isFinite(v) && v >= 1 ? v : 1;
+    } catch (e) { return 1; }
+  }
+
+  _loadVibrate() {
+    try {
+      return storage.get('psm.vibrate') !== '0';
+    } catch (e) { return true; }
+  }
+
   _computeLayout() {
-    const hudH = 58;
     const wrapW = this.width;
-    const wrapH = this.height - hudH - this.safeTop - this.safeBottom;
-    this.hudH = hudH;
+    // 顶部保留区：左上角设置按钮（进度条随棋盘定位）
+    this.progTop = this.safeTop + TOP_PAD + SETTINGS_R * 2;
+    const wrapH = this.height - this.safeBottom - this.progTop - BTN_AREA;
+    this.hudH = this.progTop - this.safeTop;
     this.platform = {
       dpr: this.dpr,
       hidden: () => this._hidden,
@@ -88,12 +114,12 @@ class App {
   }
 
   _setBoardRect() {
-    const size = G.size;
+    const bw = G.boardW, bh = G.boardH;
     const wrapW = this.width;
-    const wrapH = this.height - this.hudH - this.safeTop - this.safeBottom;
-    const x = Math.round((wrapW - size) / 2);
-    const y = Math.round(this.safeTop + this.hudH + (wrapH - size) / 2);
-    this.boardRect = { x, y, size };
+    const avail = this.height - this.safeBottom - BTN_AREA - this.progTop;
+    const ox = Math.round((wrapW - bw) / 2);
+    const oy = Math.round(this.progTop + (avail - bh) / 2);
+    this.boardRect = { x: ox + BOARD_PAD, y: oy + BOARD_PAD, w: bw - BOARD_PAD * 2, h: bh - BOARD_PAD * 2 };
     if (this.ui) {
       this.ui.setLayout({
         width: this.width,
@@ -102,6 +128,7 @@ class App {
         safeTop: this.safeTop,
         safeBottom: this.safeBottom,
         hudH: this.hudH,
+        progTop: this.progTop,
         board: this.boardRect,
       });
     }
@@ -192,7 +219,7 @@ class App {
 
   vibrate(msOrPattern) {
     try {
-      if (typeof wx === 'undefined' || !wx.vibrateShort) return;
+      if (typeof wx === 'undefined' || !wx.vibrateShort || this.uiState.vibrate === false) return;
       const pulses = Array.isArray(msOrPattern) ? msOrPattern : [msOrPattern];
       pulses.forEach((ms, i) => {
         setTimeout(() => {
@@ -209,6 +236,7 @@ class App {
   // ---- UI state helpers -------------------------------------------------
   winVisible() { return !!this.uiState.win; }
   coachVisible() { return !!this.uiState.coach; }
+  settingsVisible() { return !!this.uiState.settings; }
 
   updateHud() {
     const c = this.core.getClearedPairs();
@@ -268,15 +296,25 @@ class App {
         this.view.render();
         this.setMsg('当前无解，可尝试洗牌');
       }
-    } else if (id === 'restart') {
+    } else if (id === 'settings') {
       this.sound.ui();
-      this.restart();
-    } else if (id === 'sound') {
-      this.sound.setEnabled(!this.sound.enabled);
-      this.uiState.soundOn = this.sound.enabled;
-      if (this.sound.enabled) { this.sound.ui(); }
-      this.setMsg(this.sound.enabled ? '声音已开启' : '声音已关闭', 1400);
+      this.uiState.settings = true;
     }
+  }
+
+  // Settings panel controls: sound / vibration toggles + restart.
+  _toggleSound() {
+    this.sound.setEnabled(!this.sound.enabled);
+    this.uiState.soundOn = this.sound.enabled;
+    if (this.sound.enabled) { this.sound.ui(); }
+    this.setMsg(this.sound.enabled ? '声音已开启' : '声音已关闭', 1400);
+  }
+
+  _toggleVibrate() {
+    this.uiState.vibrate = !this.uiState.vibrate;
+    try { storage.set('psm.vibrate', this.uiState.vibrate ? '1' : '0'); } catch (e) {}
+    this.setMsg(this.uiState.vibrate ? '震动已开启' : '震动已关闭', 1400);
+    if (this.uiState.vibrate) this.vibrate(20);
   }
 
   _maybeCoach() {
@@ -297,7 +335,10 @@ class App {
   // ---- input ------------------------------------------------------------
   _boardCoords(x, y) {
     const br = this.boardRect;
-    return this.view.pixelToGrid(x - br.x, y - br.y);
+    // 棋盘画布缩放进内收区域，命中坐标需同步按比例还原
+    const kx = G.boardW / br.w;
+    const ky = G.boardH / br.h;
+    return this.view.pixelToGrid((x - br.x) * kx, (y - br.y) * ky);
   }
 
   onTouchStart(x, y) {
@@ -317,6 +358,13 @@ class App {
       if (hit.zone === 'overlay') {
         if (hit.id === 'coachStart') this._dismissCoach();
         else if (hit.id === 'winRestart') this.restart();
+        else if (hit.id === 'settingsClose') this.uiState.settings = false;
+        else if (hit.id === 'settingsSound') this._toggleSound();
+        else if (hit.id === 'settingsVibrate') this._toggleVibrate();
+        else if (hit.id === 'settingsRestart') {
+          this.uiState.settings = false;
+          this.restart();
+        }
         return;
       }
       if (hit.zone === 'button') {
@@ -386,7 +434,9 @@ class App {
       this.press.maxDist = maxDist;
       if (this.view.drag) { this.view.drag.dir = curDir; this.view.drag.maxDist = maxDist; }
     }
-    this.view.updateDrag(Math.min(pxDist, maxDist * G.pitch));
+    // 屏幕位移按内收比例换算为画布位移，保证拖拽跟手
+    const k = this.press.axis === 'h' ? (G.boardW / this.boardRect.w) : (G.boardH / this.boardRect.h);
+    this.view.updateDrag(Math.min(pxDist * k, maxDist * G.pitch));
   }
 
   onTouchEnd() {
@@ -467,6 +517,9 @@ class App {
 
   checkWin() {
     if (this.core.getPatternCount() !== 0) return;
+    // 每通过一关，关卡数 +1 并持久化
+    this.uiState.level = Math.max(1, (this.uiState.level || 1) + 1);
+    try { storage.set('psm.level', String(this.uiState.level)); } catch (e) {}
     const secs = Math.max(0, Math.round((performance.now() - this.stats.t0) / 1000));
     const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
     const extras = [];

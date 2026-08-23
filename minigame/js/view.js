@@ -21,20 +21,22 @@ function createCanvas() {
 }
 
 // ================= GEOMETRY =================
-const G = { cell: 64, gap: 4, pitch: 68, size: 540, dpr: 1 };
+const G = { cell: 64, gap: 4, pitch: 68, boardW: 640, boardH: 640, dpr: 1 };
 const DPR_CAP = 2;
-const BOARD_MAX_PX = 760;
+const CELL_MAX = 80;
 
 function computeLayout(availW, availH) {
   const w = Math.max(160, availW);
   const h = Math.max(160, availH);
-  let size = Math.floor(Math.min(w, h, BOARD_MAX_PX));
-  const gap = Math.max(2, Math.round(size * 0.011));
-  const cell = Math.max(10, Math.floor((size - gap * (COLS - 1)) / COLS));
+  const gap = Math.max(2, Math.round(Math.min(w, h) * 0.006));
+  const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
+  const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
+  const cell = Math.max(10, Math.min(cellW, cellH, CELL_MAX));
   G.gap = gap;
   G.cell = cell;
   G.pitch = cell + gap;
-  G.size = cell * COLS + gap * (COLS - 1);
+  G.boardW = cell * COLS + gap * (COLS - 1);
+  G.boardH = cell * ROWS + gap * (ROWS - 1);
 }
 
 // ================= ART: OCEAN THEME =================
@@ -213,11 +215,11 @@ class RenderView {
 
   _initBubbles() {
     this.bubbles = [];
-    const n = Math.max(8, Math.round(G.size / 48));
+    const n = Math.max(8, Math.round(G.boardW / 48));
     for (let i = 0; i < n; i++) {
       this.bubbles.push({
-        x: Math.random() * G.size,
-        y: Math.random() * G.size,
+        x: Math.random() * G.boardW,
+        y: Math.random() * G.boardH,
         r: G.cell * (0.035 + Math.random() * 0.045),
         sp: G.cell * (0.12 + Math.random() * 0.28),
         ph: Math.random() * Math.PI * 2,
@@ -251,7 +253,7 @@ class RenderView {
       for (const b of this.bubbles) {
         b.y -= b.sp * dt;
         b.x += Math.sin(now * 0.0011 + b.ph) * 12 * dt;
-        if (b.y < -b.r * 2) { b.y = G.size + b.r * 2; b.x = Math.random() * G.size; }
+        if (b.y < -b.r * 2) { b.y = G.boardH + b.r * 2; b.x = Math.random() * G.boardW; }
       }
     } else if (this.bubbles && this.bubbles.length) {
       this.bubbles.length = 0;
@@ -324,9 +326,9 @@ class RenderView {
     this.ctx.font = `800 ${size}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
     const tw = this.ctx.measureText(f.text).width;
     const pad = G.cell * 0.05 + lw / 2;
-    const x = Math.min(Math.max(f.x, pad + tw / 2), G.size - pad - tw / 2);
+    const x = Math.min(Math.max(f.x, pad + tw / 2), G.boardW - pad - tw / 2);
     const yTop = pad + size * 0.6;
-    const yBot = G.size - pad - size * 0.6;
+    const yBot = G.boardH - pad - size * 0.6;
     const y = Math.min(Math.max(f.y + rise, yTop), Math.max(yTop, yBot));
     const alpha = p < 0.65 ? 1 : Math.max(0, (1 - p) / 0.35);
     return { x, y, size, alpha };
@@ -337,86 +339,88 @@ class RenderView {
   }
 
   relayout(availW, availH) {
-    const wasSize = G.size;
+    const wasW = G.boardW, wasH = G.boardH;
     this.resize();
-    if (G.size !== wasSize || this.bg.width !== G.size * G.dpr) this._buildBackground();
+    if (G.boardW !== wasW || G.boardH !== wasH || this.bg.width !== G.boardW * G.dpr || this.bg.height !== G.boardH * G.dpr) this._buildBackground();
     this.render();
   }
 
   resize() {
     computeLayout(this.platform.wrapW, this.platform.wrapH);
     const dpr = Math.min(this.platform.dpr || 1, DPR_CAP);
-    const bw = Math.round(G.size * dpr);
-    if (this.canvas.width === bw && this.canvas.height === bw && G.dpr === dpr) {
+    const bw = Math.round(G.boardW * dpr);
+    const bh = Math.round(G.boardH * dpr);
+    if (this.canvas.width === bw && this.canvas.height === bh && G.dpr === dpr) {
       return;
     }
     G.dpr = dpr;
     this.dpr = dpr;
     this.canvas.width = bw;
-    this.canvas.height = bw;
+    this.canvas.height = bh;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   _buildBackground() {
     if (RenderView._stats) RenderView._stats.bgs++;
     const bg = createCanvas();
-    bg.width = G.size * this.dpr;
-    bg.height = G.size * this.dpr;
+    bg.width = G.boardW * this.dpr;
+    bg.height = G.boardH * this.dpr;
     const ctx = bg.getContext('2d');
     ctx.scale(this.dpr, this.dpr);
-    const S = G.size;
+    const BW = G.boardW, BH = G.boardH;
+    const D = Math.max(BW, BH);
 
-    const water = ctx.createLinearGradient(0, 0, S * 0.25, S);
-    water.addColorStop(0, '#155073');
-    water.addColorStop(0.5, '#0d3556');
-    water.addColorStop(1, '#081f38');
+    const water = ctx.createLinearGradient(0, 0, BW * 0.25, BH);
+    water.addColorStop(0, '#227a9f');
+    water.addColorStop(0.5, '#175a7d');
+    water.addColorStop(1, '#103c5c');
     ctx.fillStyle = water;
-    ctx.fillRect(0, 0, S, S);
+    ctx.fillRect(0, 0, BW, BH);
 
     const blobs = [
       [0.22, 0.16, 0.30], [0.78, 0.30, 0.26], [0.30, 0.72, 0.32],
       [0.82, 0.82, 0.24], [0.55, 0.50, 0.36],
     ];
     for (const [fx, fy, fr] of blobs) {
-      const g = ctx.createRadialGradient(fx * S, fy * S, 0, fx * S, fy * S, fr * S);
-      g.addColorStop(0, 'rgba(80,200,255,0.10)');
+      const g = ctx.createRadialGradient(fx * BW, fy * BH, 0, fx * BW, fy * BH, fr * D);
+      g.addColorStop(0, 'rgba(80,200,255,0.15)');
       g.addColorStop(1, 'rgba(80,200,255,0)');
       ctx.fillStyle = g;
-      ctx.fillRect(0, 0, S, S);
+      ctx.fillRect(0, 0, BW, BH);
     }
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const [x0, tilt, wRay] of [[0.18, -0.16, 0.16], [0.45, 0.05, 0.12], [0.74, 0.20, 0.18]]) {
-      const gx = ctx.createLinearGradient(0, 0, 0, S * 0.95);
-      gx.addColorStop(0, 'rgba(190,240,255,0.14)');
+      const gx = ctx.createLinearGradient(0, 0, 0, BH * 0.95);
+      gx.addColorStop(0, 'rgba(190,240,255,0.19)');
       gx.addColorStop(1, 'rgba(190,240,255,0)');
       ctx.fillStyle = gx;
       ctx.beginPath();
-      const bx = x0 * S, dx = tilt * S;
-      ctx.moveTo(bx - wRay * S * 0.2, 0);
-      ctx.lineTo(bx + wRay * S * 0.2, 0);
-      ctx.lineTo(bx + wRay * S + dx, S);
-      ctx.lineTo(bx - wRay * S + dx, S);
+      const bx = x0 * BW, dx = tilt * D;
+      ctx.moveTo(bx - wRay * D * 0.2, 0);
+      ctx.lineTo(bx + wRay * D * 0.2, 0);
+      ctx.lineTo(bx + wRay * D + dx, BH);
+      ctx.lineTo(bx - wRay * D + dx, BH);
       ctx.closePath();
       ctx.fill();
     }
     ctx.restore();
 
-    const sand = ctx.createRadialGradient(S / 2, S * 1.06, 0, S / 2, S * 1.06, S * 0.62);
-    sand.addColorStop(0, 'rgba(255,214,140,0.13)');
+    const sand = ctx.createRadialGradient(BW / 2, BH * 1.06, 0, BW / 2, BH * 1.06, D * 0.62);
+    sand.addColorStop(0, 'rgba(255,214,140,0.18)');
     sand.addColorStop(1, 'rgba(255,214,140,0)');
     ctx.fillStyle = sand;
-    ctx.fillRect(0, 0, S, S);
+    ctx.fillRect(0, 0, BW, BH);
 
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const x = c * G.pitch, y = r * G.pitch;
         ctx.save();
         ctx.beginPath(); roundRectPath(ctx, x, y, G.cell, G.cell, G.cell * 0.22);
-        ctx.fillStyle = 'rgba(255,255,255,0.055)';
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.09)';
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.beginPath(); roundRectPath(ctx, x + G.cell * 0.10, y + G.cell * 0.06, G.cell * 0.80, G.cell * 0.16, G.cell * 0.08);
@@ -426,11 +430,11 @@ class RenderView {
       }
     }
 
-    const vig = ctx.createRadialGradient(S / 2, S / 2, S * 0.42, S / 2, S / 2, S * 0.75);
+    const vig = ctx.createRadialGradient(BW / 2, BH / 2, BH * 0.42, BW / 2, BH / 2, BH * 0.75);
     vig.addColorStop(0, 'rgba(0,8,20,0)');
-    vig.addColorStop(1, 'rgba(0,8,20,0.34)');
+    vig.addColorStop(1, 'rgba(0,8,20,0.26)');
     ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, S, S);
+    ctx.fillRect(0, 0, BW, BH);
 
     this.bg = bg;
   }
@@ -460,11 +464,11 @@ class RenderView {
   render() {
     const ctx = this.ctx;
     const now = performance.now();
-    ctx.clearRect(0, 0, G.size, G.size);
+    ctx.clearRect(0, 0, G.boardW, G.boardH);
     const shakeOff = this._shakeOffset(now);
     ctx.save();
     if (shakeOff) ctx.translate(shakeOff.x, shakeOff.y);
-    ctx.drawImage(this.bg, 0, 0, G.size, G.size);
+    ctx.drawImage(this.bg, 0, 0, G.boardW, G.boardH);
 
     if (this.bubbles) {
       for (const b of this.bubbles) {
@@ -501,8 +505,8 @@ class RenderView {
         const curR = Math.floor(cy / cellPx);
         const curC = Math.floor(cx / cellPx);
         ctx.fillStyle = 'rgba(255,255,255,0.28)';
-        ctx.fillRect(0, curR * cellPx, G.size, G.cell);
-        ctx.fillRect(curC * cellPx, 0, G.cell, G.size);
+        ctx.fillRect(0, curR * cellPx, G.boardW, G.cell);
+        ctx.fillRect(curC * cellPx, 0, G.cell, G.boardH);
       }
     }
 
@@ -577,7 +581,7 @@ class RenderView {
 
     if (this.pick) {
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
-      ctx.fillRect(0, 0, G.size, G.size);
+      ctx.fillRect(0, 0, G.boardW, G.boardH);
       let ti = 0;
       for (const t of this.pick.targets) {
         if (!t) continue;

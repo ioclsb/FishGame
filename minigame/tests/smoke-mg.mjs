@@ -112,10 +112,11 @@ listeners.touchStart[0]({ touches: [{ identifier: 0, clientX: cb.x + cb.w / 2, c
 listeners.touchEnd[0]();
 assert(app.uiState.coach === false, 'coach dismissed via start button');
 
-// Board invariants.
-assert(app.core.getPatternCount() === 48, '48 blocks on the board');
-assert(app.core.getGrid().length === 8, 'grid is 8 rows');
-assert(Number.isFinite(app.boardRect.x) && Number.isFinite(app.boardRect.y) && app.boardRect.size > 0,
+// Board invariants (10x14 layout).
+assert(app.core.getPatternCount() === 108, '108 blocks on the board');
+assert(app.core.getGrid().length === 14, 'grid is 14 rows');
+assert(app.core.getGrid()[0].length === 10, 'grid is 10 columns');
+assert(Number.isFinite(app.boardRect.x) && Number.isFinite(app.boardRect.y) && app.boardRect.w > 0 && app.boardRect.h > 0,
   'boardRect has valid finite coordinates');
 
 // Tap the hint button (button #3, right-aligned row).
@@ -124,17 +125,35 @@ listeners.touchStart[0]({ touches: [{ identifier: 1, clientX: hintBtn.x, clientY
 listeners.touchEnd[0]();
 assert(app.stats.hints === 1, 'hint button increments hint counter');
 
-// Tap the sound button (toggles mute).
-const sndBtn = app.ui.buttons[4];
-const wasOn = app.sound.enabled;
-listeners.touchStart[0]({ touches: [{ identifier: 2, clientX: sndBtn.x, clientY: sndBtn.y }] });
+// Open the settings panel and toggle sound / vibration via its rows.
+const sBtn = app.ui.settingsBtn;
+listeners.touchStart[0]({ touches: [{ identifier: 2, clientX: sBtn.x, clientY: sBtn.y }] });
 listeners.touchEnd[0]();
-assert(app.sound.enabled === !wasOn, 'sound button toggles mute');
+assert(app.uiState.settings === true, 'settings panel opens via top-left button');
+
+const sndRow = app.ui.settingsRows.sound;
+const vibRow = app.ui.settingsRows.vibrate;
+assert(!!sndRow && !!vibRow, 'settings rows laid out');
+
+const wasOn = app.sound.enabled;
+listeners.touchStart[0]({ touches: [{ identifier: 3, clientX: sndRow.x + sndRow.w / 2, clientY: sndRow.y + sndRow.h / 2 }] });
+listeners.touchEnd[0]();
+assert(app.sound.enabled === !wasOn, 'settings sound row toggles mute');
+
+const wasVib = app.uiState.vibrate;
+listeners.touchStart[0]({ touches: [{ identifier: 4, clientX: vibRow.x + vibRow.w / 2, clientY: vibRow.y + vibRow.h / 2 }] });
+listeners.touchEnd[0]();
+assert(app.uiState.vibrate === !wasVib, 'settings vibration row toggles');
+
+const closeB = app.ui.settingsCloseBtn;
+listeners.touchStart[0]({ touches: [{ identifier: 5, clientX: closeB.x + closeB.w / 2, clientY: closeB.y + closeB.h / 2 }] });
+listeners.touchEnd[0]();
+assert(app.uiState.settings === false, 'settings closes via close button');
 
 // Simulate a press-drag-release on the board (no assertion on match, just
 // exercising the state machine without throwing).
 const br = app.boardRect;
-const cx = br.x + br.size / 2, cy = br.y + br.size / 2;
+const cx = br.x + br.w / 2, cy = br.y + br.h / 2;
 listeners.touchStart[0]({ touches: [{ identifier: 3, clientX: cx, clientY: cy }] });
 listeners.touchMove[0]({ touches: [{ identifier: 3, clientX: cx + 40, clientY: cy }] });
 listeners.touchMove[0]({ touches: [{ identifier: 3, clientX: cx + 90, clientY: cy }] });
@@ -147,17 +166,22 @@ listeners.touchStart[0]({ touches: [{ identifier: 4, clientX: undoBtn.x, clientY
 listeners.touchEnd[0]();
 assert(true, 'undo button handled');
 
-const restartBtn = app.ui.buttons[3];
-listeners.touchStart[0]({ touches: [{ identifier: 5, clientX: restartBtn.x, clientY: restartBtn.y }] });
+// Restart via the settings panel rebuilds the board and closes settings.
+const restartRow = app.ui.settingsRows.restart;
+listeners.touchStart[0]({ touches: [{ identifier: 5, clientX: sBtn.x, clientY: sBtn.y }] });
 listeners.touchEnd[0]();
-assert(app.core.getPatternCount() === 48, 'restart rebuilds a full board');
+assert(app.uiState.settings === true, 'settings opens again for restart');
+listeners.touchStart[0]({ touches: [{ identifier: 6, clientX: restartRow.x + restartRow.w / 2, clientY: restartRow.y + restartRow.h / 2 }] });
+listeners.touchEnd[0]();
+assert(app.core.getPatternCount() === 108, 'settings restart rebuilds a full board');
+assert(app.uiState.settings === false, 'settings restart closes settings');
 
 // Bounce parity: tapping a block that cannot match fires the same-pattern
 // pulse (web behavior), i.e. view.bounce is set and clears after the 450ms
 // animation. Search with the non-mutating checkMatch/findMultiMatches.
 let orphan = null;
-for (let r = 0; r < 8 && !orphan; r++) {
-  for (let c = 0; c < 8 && !orphan; c++) {
+for (let r = 0; r < 14 && !orphan; r++) {
+  for (let c = 0; c < 10 && !orphan; c++) {
     if (app.core.getGrid()[r][c] === 0) continue;
     if (app.core.findMultiMatches(r, c)) continue;
     if (app.core.checkMatch(r, c)) continue;
@@ -165,8 +189,8 @@ for (let r = 0; r < 8 && !orphan; r++) {
   }
 }
 if (orphan) {
-  const ox = br.x + (orphan.c + 0.5) * (br.size / 8);
-  const oy = br.y + (orphan.r + 0.5) * (br.size / 8);
+  const ox = br.x + (orphan.c + 0.5) * (br.w / 10);
+  const oy = br.y + (orphan.r + 0.5) * (br.h / 14);
   listeners.touchStart[0]({ touches: [{ identifier: 6, clientX: ox, clientY: oy }] });
   listeners.touchEnd[0]();
   assert(!!app.view.bounce, 'no-match tap triggers same-pattern bounce');
@@ -182,16 +206,16 @@ if (orphan) {
 // A MATCHING tap also fires the same-pattern pulse (hints the remaining
 // same-type blocks for chain planning), then it clears.
 let matchCell = null;
-for (let r = 0; r < 8 && !matchCell; r++) {
-  for (let c = 0; c < 8 && !matchCell; c++) {
+for (let r = 0; r < 14 && !matchCell; r++) {
+  for (let c = 0; c < 10 && !matchCell; c++) {
     if (app.core.getGrid()[r][c] === 0) continue;
     if (app.core.findMultiMatches(r, c)) continue;
     if (app.core.checkMatch(r, c)) matchCell = { r, c };
   }
 }
 if (matchCell) {
-  const mx = br.x + (matchCell.c + 0.5) * (br.size / 8);
-  const my = br.y + (matchCell.r + 0.5) * (br.size / 8);
+  const mx = br.x + (matchCell.c + 0.5) * (br.w / 10);
+  const my = br.y + (matchCell.r + 0.5) * (br.h / 14);
   listeners.touchStart[0]({ touches: [{ identifier: 7, clientX: mx, clientY: my }] });
   listeners.touchEnd[0]();
   assert(!!app.view.bounce, 'matching tap also triggers same-pattern bounce');
@@ -217,10 +241,10 @@ app.core.blocks = [
   { id: 100, pattern: 1, r: 0, c: 0 },
   { id: 101, pattern: 1, r: 0, c: 2 },
 ];
-app.core.grid = Array.from({ length: 8 }, () => Array(8).fill(0));
+app.core.grid = Array.from({ length: 14 }, () => Array(10).fill(0));
 app.core.grid[0][0] = 1;
 app.core.grid[0][2] = 1;
-app.core.clearedPairs = 23;
+app.core.clearedPairs = 53;
 app.core.undoSnapshot = null;
 app.stats.t0 = performance.now() - 3000;
 const winRes = app.core.clickResolve(0, 0);

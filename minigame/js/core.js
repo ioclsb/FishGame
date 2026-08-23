@@ -7,10 +7,10 @@ const { G } = require('./globals.js');
 
 const DEBUG = G.__DEBUG_ENABLED === true;
 
-const COLS = 8, ROWS = 8;
-const PATTERNS = 6;            // pattern ids 1..6
-const BLOCKS_PER_PATTERN = 8;  // 6 * 8 = 48 blocks, 16 empty on 8x8
-const TOTAL_PAIRS = (PATTERNS * BLOCKS_PER_PATTERN) / 2; // 24
+const COLS = 10, ROWS = 14;      // 竖屏 10x14 布局
+const PATTERNS = 6;              // pattern ids 1..6
+const BLOCKS_PER_PATTERN = 18;   // 6 * 18 = 108 blocks, 32 empty on 10x14
+const TOTAL_PAIRS = (PATTERNS * BLOCKS_PER_PATTERN) / 2; // 54
 
 class GameCore {
   constructor() {
