@@ -202,7 +202,7 @@ class UI {
     this._drawMsg(ctx, now);
     if (this.app.coachVisible()) this._drawCoach(ctx);
     if (this.app.winVisible()) this._drawWin(ctx, now);
-    if (this.app.settingsVisible()) this._drawSettings(ctx);
+    if (this.app.settingsVisible()) this._drawSettings(ctx, now);
   }
 
   _drawHud(ctx, now) {
@@ -512,7 +512,7 @@ class UI {
     }
   }
 
-  _drawSettings(ctx) {
+  _drawSettings(ctx, now) {
     const L = this.layout;
     ctx.fillStyle = 'rgba(2,10,22,0.72)';
     ctx.fillRect(0, 0, L.width, L.height);
@@ -546,20 +546,26 @@ class UI {
     this._drawSettingsRow(ctx, this.settingsRows.sound, '音效', null, !!s.soundOn, 'sound');
     this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate, 'vibrate');
 
-    // 底部一排按钮：左“重新开始”、右“返回游戏”
+    // 底部一排按钮：左“重新开始”（黄）、右“返回游戏”（呼吸缩放）
     const rb = this.settingsRestartBtn;
-    if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#2f7fb0', '#1c5e87', this.pressId === 'settingsRestart');
+    if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#ffd54f', '#f5b400', this.pressId === 'settingsRestart', false, now, '#0b2743');
     const b = this.settingsCloseBtn;
-    if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose');
+    if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose', true, now, '#fff');
   }
 
-  // 设置面板底部按钮：圆角胶囊、文字居中，press 时轻微缩小并提亮
-  _drawPanelButton(ctx, btn, label, c0, c1, pressed) {
+  // 设置面板底部按钮：圆角胶囊、文字居中，press 时轻微缩小并提亮，
+  // pulse 时（未按压）做轻微放大缩小呼吸效果
+  _drawPanelButton(ctx, btn, label, c0, c1, pressed, pulse, now, textColor) {
     ctx.save();
     if (pressed) {
       ctx.globalAlpha = 0.92;
       ctx.translate(btn.x + btn.w / 2, btn.y + btn.h / 2);
       ctx.scale(0.95, 0.95);
+      ctx.translate(-(btn.x + btn.w / 2), -(btn.y + btn.h / 2));
+    } else if (pulse && now) {
+      const sc = 1 + 0.04 * Math.sin(now * 0.006);
+      ctx.translate(btn.x + btn.w / 2, btn.y + btn.h / 2);
+      ctx.scale(sc, sc);
       ctx.translate(-(btn.x + btn.w / 2), -(btn.y + btn.h / 2));
     }
     ctx.beginPath();
@@ -569,7 +575,7 @@ class UI {
     g.addColorStop(1, pressed ? this._lighten(c1) : c1);
     ctx.fillStyle = g;
     ctx.fill();
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = textColor || '#fff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = rf('700', 15);
