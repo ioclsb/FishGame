@@ -531,7 +531,7 @@ class UI {
 
     // 底部一排按钮：左“重新开始”（黄）、右“返回游戏”（呼吸缩放）
     const rb = this.settingsRestartBtn;
-    if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#ffd54f', '#f5b400', this.pressId === 'settingsRestart', false, now, '#0b2743');
+    if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#ffd54f', '#f5b400', this.pressId === 'settingsRestart', false, now, '#ffffff');
     const b = this.settingsCloseBtn;
     if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose', true, now, '#fff');
   }
