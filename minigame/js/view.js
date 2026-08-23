@@ -425,7 +425,7 @@ class RenderView {
     const size = Math.max(8, Math.round(f.size * pop));
     const rise = -G.cell * 0.38 * p;
     const lw = Math.max(3, G.cell * 0.07);
-    this.ctx.font = `800 ${size}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
+    this.ctx.font = `800 ${size}px "Yuanti SC","YouYuan","PingFang SC","Microsoft YaHei",sans-serif`;
     const tw = this.ctx.measureText(f.text).width;
     const pad = G.cell * 0.05 + lw / 2;
     const x = Math.min(Math.max(f.x, pad + tw / 2), G.boardW - pad - tw / 2);
@@ -689,7 +689,7 @@ class RenderView {
         const L = this._floaterLayout(f);
         if (L.alpha <= 0) continue;
         ctx.globalAlpha = L.alpha;
-        ctx.font = `800 ${L.size}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
+        ctx.font = `800 ${L.size}px "Yuanti SC","YouYuan","PingFang SC","Microsoft YaHei",sans-serif`;
         ctx.lineWidth = lineW;
         ctx.strokeStyle = 'rgba(6,18,34,0.8)';
         ctx.strokeText(f.text, L.x, L.y);

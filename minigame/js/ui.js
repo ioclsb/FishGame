@@ -246,7 +246,7 @@ class UI {
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.font = '700 13px sans-serif';
+      ctx.font = rf('700', 13);
       ctx.fillText(`${Math.round(pct)}%`, pctX, fy);
       // level badge above the bar
       this._drawLevelBadge(ctx, p.x + p.w / 2, p.y - 16);
@@ -275,7 +275,7 @@ class UI {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(255,255,255,0.72)';
-      ctx.font = '500 11px sans-serif';
+      ctx.font = rf('500', 11);
       ctx.fillText(b.label, b.x, b.y + b.r + 13);
     }
   }
@@ -286,7 +286,7 @@ class UI {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.font = '600 12px sans-serif';
+    ctx.font = rf('600', 12);
     ctx.fillText(`第 ${level} 关`, cx, cy);
   }
 
@@ -691,7 +691,7 @@ class UI {
     a = Math.max(0, Math.min(1, a));
     ctx.save();
     ctx.globalAlpha = a;
-    ctx.font = '600 15px sans-serif';
+    ctx.font = rf('600', 15);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     if (m.plain) {
@@ -744,7 +744,7 @@ class UI {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(234,246,255,0.94)';
-    ctx.font = '600 14px sans-serif';
+    ctx.font = rf('600', 14);
     ctx.fillText('按住方块拖动，推动整排滑动', cx + cardW / 2, cy + 52);
     ctx.fillText('同款方块直线相对时，点击直接配对消除', cx + cardW / 2, cy + 86);
 
@@ -758,7 +758,7 @@ class UI {
     ctx.fillStyle = g2;
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = '700 16px sans-serif';
+    ctx.font = rf('700', 16);
     ctx.fillText('开始游戏', bx + bw / 2, by + bh / 2 + 1);
     this.coachBtn = { x: bx, y: by, w: bw, h: bh };
   }
@@ -801,11 +801,11 @@ class UI {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffd54f';
-    ctx.font = '800 26px sans-serif';
+    ctx.font = rf('800', 26);
     ctx.fillText('恭喜通关', cx + cardW / 2, cy + 108);
 
     ctx.fillStyle = 'rgba(234,246,255,0.85)';
-    ctx.font = '500 13px sans-serif';
+    ctx.font = rf('500', 13);
     ctx.fillText(s.win.statsText, cx + cardW / 2, cy + 138);
 
     const bw = 170, bh = 46;
@@ -818,7 +818,7 @@ class UI {
     ctx.fillStyle = g2;
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.font = '700 16px sans-serif';
+    ctx.font = rf('700', 16);
     ctx.fillText('再来一局', bx + bw / 2, by + bh / 2 + 1);
     this.winBtn = { x: bx, y: by, w: bw, h: bh };
   }
