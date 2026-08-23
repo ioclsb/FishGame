@@ -4,6 +4,18 @@
 // to silent no-ops and never throws.
 const storage = require('./storage.js');
 
+// 背景音乐：C 大调轻快循环旋律（0 表示休止，单位 Hz）
+const BGM_STEP = 0.34; // 每步时长（八分音符，约 88 BPM）
+const BGM_MELODY = [
+  329.63, 392.00, 440.00, 392.00, 329.63, 293.66, 329.63, 0,
+  261.63, 329.63, 392.00, 440.00, 392.00, 329.63, 293.66, 0,
+  440.00, 523.25, 587.33, 523.25, 440.00, 392.00, 440.00, 0,
+  392.00, 440.00, 523.25, 587.33, 659.25, 587.33, 523.25, 0,
+];
+const BGM_STEPS = BGM_MELODY.length;
+// 每 8 步一个低音垫：C - Am - F - G
+const BGM_BASS = [130.81, 110.00, 174.61, 196.00];
+
 class SoundManager {
   constructor() {
     this.ctx = null;
@@ -11,12 +23,17 @@ class SoundManager {
     this.comp = null;
     this.enabled = SoundManager.loadPref();
     this._unlocked = false;
+    this.bgmGain = null;
+    this.bgmWanted = false;
+    this._bgm = null;
   }
+
 
   // Call from the first user gesture (App wires this to touchstart).
   unlock() {
     this._initOnFirstUse();
     this._silentUnlock();
+    if (this.enabled) this.startBgm();
   }
 
   // wx.onShow resumes a suspended context (iOS).
@@ -24,6 +41,7 @@ class SoundManager {
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
+    if (this.enabled && this.bgmWanted) this.startBgm();
   }
 
   _silentUnlock() {
@@ -52,6 +70,8 @@ class SoundManager {
       this.master.gain.setTargetAtTime(on ? 0.5 : 0.0001, this.ctx.currentTime, 0.02);
     }
     if (on) this._initOnFirstUse();
+    if (on) { if (this.bgmWanted) this.startBgm(); }
+    else this.pauseBgm();
   }
 
   _initOnFirstUse() {
@@ -145,6 +165,77 @@ class SoundManager {
     bp.connect(gain);
     gain.connect(this.master);
     src.start(t0);
+  }
+
+  // ---- 背景音乐：轻快悠扬的 C 大调循环旋律（全程程序化合成，无需音频素材）----
+  startBgm() {
+    this._initOnFirstUse();
+    this.bgmWanted = true;
+    if (!this.ctx || !this.enabled) return;
+    if (this._bgm && this._bgm.timer) return;
+    if (!this.bgmGain) {
+      this.bgmGain = this.ctx.createGain();
+      this.bgmGain.gain.value = 0.2;
+      this.bgmGain.connect(this.master);
+    }
+    const b = this._bgm = { step: 0, nextTime: this.ctx.currentTime + 0.12, timer: null };
+    b.timer = setInterval(() => this._bgmSched(), 60);
+    this._bgmSched();
+  }
+
+  // 仅暂停调度（保留 bgmWanted），用于前后台切换省电
+  pauseBgm() {
+    if (this._bgm && this._bgm.timer) {
+      clearInterval(this._bgm.timer);
+      this._bgm.timer = null;
+    }
+    this._bgm = null;
+  }
+
+  stopBgm() {
+    this.bgmWanted = false;
+    this.pauseBgm();
+  }
+
+  _bgmSched() {
+    if (!this.ctx || !this._bgm) return;
+    const ahead = 0.25;
+    while (this._bgm.nextTime < this.ctx.currentTime + ahead) {
+      this._bgmNoteAt(this._bgm.step, this._bgm.nextTime);
+      this._bgm.step = (this._bgm.step + 1) % BGM_STEPS;
+      this._bgm.nextTime += BGM_STEP;
+    }
+  }
+
+  _bgmNoteAt(step, when) {
+    const f = BGM_MELODY[step];
+    if (f) {
+      // 主旋律：温暖的三角波，柔起柔落
+      this._bgmTone(f, BGM_STEP * 0.92, 'triangle', 0.5, when, 0.02, 0.14);
+      // 每四步点缀一记高八度正弦，增添“亮晶晶”的轻快感
+      if (step % 4 === 0) this._bgmTone(f * 2, BGM_STEP * 0.5, 'sine', 0.16, when, 0.01, 0.12);
+    }
+    // 每 8 步换一个和弦低音垫（C - Am - F - G）
+    if (step % 8 === 0) {
+      const bass = BGM_BASS[(step / 8) % BGM_BASS.length];
+      this._bgmTone(bass, BGM_STEP * 7.4, 'sine', 0.42, when, 0.04, 0.6);
+    }
+  }
+
+  _bgmTone(freq, dur, type, vol, when, atk = 0.02, rel = 0.12) {
+    if (!this.ctx || !this.bgmGain) return;
+    const t0 = when;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(vol, t0 + atk);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(this.bgmGain);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
   }
 
   // Fixed match anchor (see the web version's comment block).

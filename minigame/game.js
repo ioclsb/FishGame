@@ -160,6 +160,7 @@ wx.onShow(() => {
 });
 wx.onHide(() => {
   if (app) app._hidden = true;
+  if (app && app.sound) app.sound.pauseBgm();
 });
 
 wx.onWindowResize(() => {
