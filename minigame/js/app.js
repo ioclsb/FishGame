@@ -11,6 +11,8 @@ const storage = require('./storage.js');
 require('./debug.js');
 
 const DEBUG = GLOBAL.__DEBUG_ENABLED === true;
+// 开发跳关：设为目标关（如 36）启动即直跳该关；用毕改回 0 恢复常规进度。
+const JUMP_TO_LEVEL = 36;
 const PATTERN_NAMES = ['小丑鱼', '蓝倒吊', '绿海龟', '河豚', '紫水母', '小红蟹'];
 // 顶部设置按钮与安全区之间的留白
 const TOP_PAD = 12;
@@ -105,6 +107,11 @@ class App {
 
   // ---- layout -----------------------------------------------------------
   _loadLevel() {
+    // 开发跳关：把 JUMP_TO_LEVEL 设为目标关即可启动直跳该关；用毕改回 0 恢复常规进度。
+    if (JUMP_TO_LEVEL >= 1) {
+      try { storage.set('psm.level', String(JUMP_TO_LEVEL)); } catch (e) {}
+      return JUMP_TO_LEVEL;
+    }
     // 启动参数 ?level=N 可跳关（开发者工具“启动参数”填 level=36），仅用于测试/调试。
     try {
       const q = (wx.getLaunchOptionsSync && wx.getLaunchOptionsSync().query) || {};
