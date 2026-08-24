@@ -23,19 +23,40 @@ function createCanvas() {
 // ================= GEOMETRY =================
 const G = { cell: 64, gap: 4, pitch: 68, boardW: 640, boardH: 640, dpr: 1 };
 const DPR_CAP = 2;
-const CELL_MAX = 120;
+const CELL_MAX = 150;
 
 // 棋盘背景统一为整片蓝色（去掉浅色渐变与格子浅色叠层）
 const BOARD_BG = '#103e66';
 
-// 所有方块的底色统一为同一种淡蓝色（与进度条填充同色系、略深），图案本身保留各自独特颜色作为区分
-const TILE_BASE = '#c9e6f8';
+// 所有方块的底色统一为同一种浅蓝色，图案本身保留各自独特颜色作为区分
+const TILE_BASE = '#a6d8f0';
+
+// 手绘贴图：assets/patterns/NN.png（或 .jpg）优先于矢量绘制；无图则走 drawCreature 兜底
+const PATTERN_IMG_DIR = 'assets/patterns/';
+const _patternImg = {};
+function _patternImgPath(p) { return PATTERN_IMG_DIR + String(p).padStart(2, '0'); }
+function _loadPatternImages() {
+  if (typeof wx === 'undefined' || !wx.createImage) return;
+  for (let p = 1; p <= 70; p++) {
+    const load = (ext) => new Promise((done) => {
+      const im = wx.createImage();
+      im.onload = () => {
+        _patternImg[p] = im;
+        if (RenderView._sprites && RenderView._sprites.entries) delete RenderView._sprites.entries[p];
+        done();
+      };
+      im.onerror = () => done();
+      im.src = _patternImgPath(p) + ext;
+    });
+    load('.png').then(() => { if (!_patternImg[p]) load('.jpg'); });
+  }
+}
 
 function computeLayout(availW, availH) {
   const w = Math.max(160, availW);
   const h = Math.max(160, availH);
   // 缩小格间空隙（约 3px，对齐参考图的紧凑拼盘感），让方块更大、图案更清晰
-  const gap = Math.max(1, Math.round(Math.min(w, h) * 0.002));
+  const gap = 0; // 方块之间无缝隙
   const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
   const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
   const cell = Math.max(10, Math.min(cellW, cellH, CELL_MAX));
@@ -120,35 +141,35 @@ class RenderView {
     RenderView._stats.tiles++;
     const [s, ctx] = RenderView._tileCanvas();
     const S = G.cell;
-    const m = S * 0.04;
+    const m = S * 0.03;
     const w = S - m * 2;
-    const r = 2;
+    const r = 3;
+    const t = Math.max(3, S * 0.10); // 伪 3D 厚度（向下偏移的侧面），比之前更厚
 
-    const t = Math.max(2, S * 0.05); // 伪 3D 厚度（向下偏移的侧面）
-    // 侧面：深一档底色、向下偏移，并带投影 —— 模拟平面块被“垫高”的立体感
+    // 侧面：深一档底色、向下偏移，投影更强 —— 挤出式立体感
     ctx.save();
-    ctx.shadowColor = 'rgba(4,16,30,0.40)';
-    ctx.shadowBlur = S * 0.06;
-    ctx.shadowOffsetY = S * 0.04;
-    ctx.fillStyle = shade(TILE_BASE, -30);
+    ctx.shadowColor = 'rgba(4,16,30,0.45)';
+    ctx.shadowBlur = S * 0.08;
+    ctx.shadowOffsetY = S * 0.055;
+    ctx.fillStyle = shade(TILE_BASE, -48);
     ctx.beginPath(); roundRectPath(ctx, m, m + t, w, w, r); ctx.fill();
     ctx.restore();
 
-    // 顶面：平面底色，去掉镜面高光
+    // 顶面：平面浅蓝，无镜面高光
     ctx.fillStyle = TILE_BASE;
     ctx.beginPath(); roundRectPath(ctx, m, m, w, w, r); ctx.fill();
 
-    // 受光上沿 bevel（弱高光，非镜面），仅描上边营造斜面
+    // 受光上沿 bevel（弱高光，非镜面）
     ctx.save();
     ctx.lineWidth = Math.max(1, S * 0.03);
-    ctx.strokeStyle = shade(TILE_BASE, 24);
+    ctx.strokeStyle = shade(TILE_BASE, 26);
     ctx.beginPath(); roundRectPath(ctx, m + 0.5, m + 0.5, w - 1, w - 1, r); ctx.stroke();
     ctx.restore();
 
     // 暗边 bevel：底部/右侧更深的细描边，强化厚度
     ctx.save();
     ctx.lineWidth = Math.max(1, S * 0.02);
-    ctx.strokeStyle = 'rgba(8,20,36,0.20)';
+    ctx.strokeStyle = 'rgba(8,20,36,0.22)';
     ctx.beginPath(); roundRectPath(ctx, m + 0.5, m + 0.5, w - 1, w - 1, r); ctx.stroke();
     ctx.restore();
 
@@ -160,6 +181,12 @@ class RenderView {
     const [s, ctx] = RenderView._tileCanvas();
     ctx.drawImage(base, 0, 0, G.cell, G.cell);
     const inset = G.cell * 0.05;
+    const im = _patternImg[pattern];
+    if (im) {
+      // 手绘贴图：主体已裁方居中，直接铺进方块面（透明处透出底色与挤出侧面）
+      ctx.drawImage(im, inset, inset, G.cell - inset * 2, G.cell - inset * 2);
+      return s;
+    }
     const size = G.cell - inset * 2;
     ctx.save();
     ctx.translate(inset, inset);
@@ -566,7 +593,8 @@ class RenderView {
         const ampRad = (1 - t) * 0.247;
         pulseAngle = Math.sin(t * Math.PI * 2.5) * ampRad;
       } else {
-        this.bounce = null;
+    this.bounce = null;
+    this.settle = null;
       }
     }
 
@@ -594,6 +622,12 @@ class RenderView {
       let scale = 1;
       let rot = 0;
       if (pulsePattern !== null && block.pattern === pulsePattern) rot = pulseAngle;
+      if (this.settle) {
+        // 消除后余下方块整体“向前突出”一下（放大回弹），配合底部厚边强化立体感
+        const st = (now - this.settle.t0) / this.settle.dur;
+        if (st >= 1) this.settle = null;
+        else scale *= 1 + 0.05 * Math.sin(st * Math.PI);
+      }
       if (!REDUCED_MOTION) {
         const lt = (now - this.spawnT0 - Math.min(idx * 9, 420)) / 240;
         if (lt < 0) scale *= 0.0001;
@@ -741,6 +775,16 @@ class RenderView {
     });
   }
 
+  triggerSettle() {
+    // 消除完成后调用：余下方块快速放大回弹一次，像从棋盘上“浮起”
+    if (REDUCED_MOTION) return;
+    this.settle = { t0: performance.now(), dur: 260 };
+    this._animateUntil(260, () => this.render(), () => {
+      this.settle = null;
+      this.render();
+    });
+  }
+
   matchBurst(r, c, pattern, power = 1, delayMs = 0) {
     if (REDUCED_MOTION) return;
     const cx = c * G.pitch + G.cell / 2;
@@ -779,8 +823,11 @@ class RenderView {
     if (!this.drag) return;
     const cellPx = G.pitch;
     const maxPx = this.drag.maxDist * cellPx;
-    this.drag.offsetPx = Math.max(0, Math.min(maxPx, offsetPx));
-    this.render();
+    // 橡皮筋：超过最大距离后带阻力继续跟随，松手回弹，避免“卡死不跟手”
+    let v = Math.max(0, offsetPx);
+    if (v > maxPx) v = maxPx + (v - maxPx) * 0.22;
+    this.drag.offsetPx = Math.min(v, maxPx + cellPx * 0.38);
+    // 不在此处同步 render：tick() 拖拽期间每帧渲染，重复绘制反而掉帧
   }
 
   playElimination(cellA, cellB, pattern, onDone) {
@@ -795,6 +842,7 @@ class RenderView {
     this.render();
     this._animateUntil(350, () => this.render(), () => {
       this.elimFlash = null;
+      this.triggerSettle(); // 消除后余下方块“突出”一下
       this.render();
       if (onDone) onDone();
     });
@@ -919,3 +967,6 @@ RenderView._sprites = null;
 RenderView._paused = false;
 
 module.exports = { RenderView, G, computeLayout, PATTERN_COLORS, roundRectPath, createCanvas };
+
+// 启动即预加载手绘贴图（微信环境内；缺失文件 onerror 静默走矢量兜底）
+if (typeof wx !== 'undefined') _loadPatternImages();

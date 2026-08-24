@@ -72,7 +72,7 @@ class SoundManager {
     this.enabled = on;
     try { storage.set('psm.sound', on ? 'on' : 'off'); } catch (e) {}
     if (this.master && this.ctx) {
-      this.master.gain.setTargetAtTime(on ? 0.8 : 0.0001, this.ctx.currentTime, 0.02);
+      this.master.gain.setTargetAtTime(on ? 1.0 : 0.0001, this.ctx.currentTime, 0.02);
     }
     if (on) this._initOnFirstUse();
   }
@@ -101,9 +101,9 @@ class SoundManager {
       // 所以无条件 resume（对 running 的 ctx 调用无害）
       try { if (this.ctx.resume) this.ctx.resume(); } catch (e) {}
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.enabled ? 0.8 : 0.0001;
+      this.master.gain.value = this.enabled ? 1.0 : 0.0001;
       this.comp = this.ctx.createDynamicsCompressor();
-      this.comp.threshold.value = -18;
+      this.comp.threshold.value = -10;
       this.comp.knee.value = 24;
       this.comp.ratio.value = 6;
       this.comp.attack.value = 0.003;
