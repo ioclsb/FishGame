@@ -12,7 +12,7 @@ require('./debug.js');
 
 const DEBUG = GLOBAL.__DEBUG_ENABLED === true;
 // 开发跳关：设为目标关（如 36）启动即直跳该关；用毕改回 0 恢复常规进度。
-const JUMP_TO_LEVEL = 1;
+const JUMP_TO_LEVEL = 50;
 const PATTERN_NAMES = ['小丑鱼', '蓝倒吊', '绿海龟', '河豚', '紫水母', '小红蟹'];
 // 顶部设置按钮与安全区之间的留白
 const TOP_PAD = 12;

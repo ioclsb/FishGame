@@ -12,7 +12,7 @@ function shade(hex, amt) {
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
 }
 
-const OUT = 'rgba(15,30,48,0.55)';
+const OUT = 'rgba(15,30,48,0.72)';
 
 // ctx.ellipse with a transform-based fallback for runtimes that lack it.
 function ell(ctx, x, y, rx, ry, rot, a0, a1) {
@@ -239,7 +239,7 @@ function drawJellyfish(ctx) {
   ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke();
   // highlight
   const gl = ctx.createRadialGradient(42, 40, 0, 42, 40, 20);
-  gl.addColorStop(0, 'rgba(255,255,255,0.55)');
+  gl.addColorStop(0, 'rgba(255,255,255,0.26)');
   gl.addColorStop(0.5, 'rgba(255,255,255,0)');
   ctx.beginPath(); ell(ctx, 42, 40, 16, 10, 0, 0, Math.PI * 2);
   ctx.fillStyle = gl; ctx.fill();
@@ -310,8 +310,8 @@ function drawCrab(ctx) {
 }
 
 function drawCreature(ctx, pattern, color) {
-  // 注入按图案色提亮的填充，使 8–35 生物各自带颜色（原 1–7 用自己的渐变，不受影响）
-  BODY = color ? shade(color, 46) : '#eef4fb';
+  // 注入接近满色的填充，使 8–70 生物各自鲜明（原 1–7 用自己的渐变，不受影响）
+  BODY = color ? shade(color, 12) : '#eef4fb';
   switch (pattern) {
     case 1: drawClownfish(ctx); break;
     case 2: drawBlueTang(ctx); break;
@@ -348,6 +348,41 @@ function drawCreature(ctx, pattern, color) {
     case 33: drawBeta(ctx); break;
     case 34: drawHammerhead(ctx); break;
     case 35: drawWhaleShark(ctx); break;
+    case 36: drawManatee(ctx); break;
+    case 37: drawBarracuda(ctx); break;
+    case 38: drawFlyingfish(ctx); break;
+    case 39: drawGrouper(ctx); break;
+    case 40: drawManta(ctx); break;
+    case 41: drawCuttlefish(ctx); break;
+    case 42: drawSeahare(ctx); break;
+    case 43: drawCoelacanth(ctx); break;
+    case 44: drawLancetfish(ctx); break;
+    case 45: drawSunfish(ctx); break;
+    case 46: drawSpinyfish(ctx); break;
+    case 47: drawTriggerfish(ctx); break;
+    case 48: drawFilefish(ctx); break;
+    case 49: drawPipefish(ctx); break;
+    case 50: drawLeafy(ctx); break;
+    case 51: drawHatchetfish(ctx); break;
+    case 52: drawLionfish(ctx); break;
+    case 53: drawNudibranch(ctx); break;
+    case 54: drawChiton(ctx); break;
+    case 55: drawConeShell(ctx); break;
+    case 56: drawSpiralShell(ctx); break;
+    case 57: drawWhelk(ctx); break;
+    case 58: drawTurbanShell(ctx); break;
+    case 59: drawBasketStar(ctx); break;
+    case 60: drawFeatherStar(ctx); break;
+    case 61: drawSalp(ctx); break;
+    case 62: drawIsopod(ctx); break;
+    case 63: drawSponge(ctx); break;
+    case 64: drawBranchy(ctx); break;
+    case 65: drawBrittleStar(ctx); break;
+    case 66: drawSeaCucumber(ctx); break;
+    case 67: drawHorseshoeCrab(ctx); break;
+    case 68: drawAmmonite(ctx); break;
+    case 69: drawTrilobite(ctx); break;
+    case 70: drawCombJelly(ctx); break;
   }
 }
 
@@ -378,7 +413,7 @@ function drawStarfish(ctx) {
 }
 
 let BODY = '#eef4fb'; // 8–35 生物的填充色：由 drawCreature 按图案色提亮后注入，配深色描边
-function _outlineStroke(ctx) { ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke(); }
+function _outlineStroke(ctx) { ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 3.4; ctx.strokeStyle = OUT; ctx.stroke(); }
 function _eyes(ctx, x1, y1, x2, y2, r) {
   r = r || 3.2;
   for (const p of [[x1, y1], [x2, y2]]) {
@@ -386,188 +421,469 @@ function _eyes(ctx, x1, y1, x2, y2, r) {
     ctx.beginPath(); ctx.arc(p[0], p[1], r * 0.5, 0, Math.PI * 2); ctx.fillStyle = '#20242c'; ctx.fill();
   }
 }
+// 亮→饱和竖向渐变填充（对齐 1–7 原始釉质风：上亮下饱和），仅同色系内明暗过渡
+function _fillGloss(ctx, y0, y1) {
+  const g = ctx.createLinearGradient(0, y0, 0, y1);
+  g.addColorStop(0, shade(BODY, 24));
+  g.addColorStop(0.5, BODY);
+  g.addColorStop(1, shade(BODY, -34));
+  ctx.fillStyle = g; ctx.fill(); _outlineStroke(ctx);
+}
 
 function drawSeahorse(ctx) {
-  ctx.fillStyle = BODY;
   ctx.beginPath();
-  ctx.moveTo(44, 80);
-  ctx.bezierCurveTo(22, 70, 30, 44, 46, 40);
-  ctx.bezierCurveTo(60, 36, 64, 50, 54, 50);
-  ctx.quadraticCurveTo(58, 44, 50, 46);
-  ctx.quadraticCurveTo(42, 50, 48, 64);
-  ctx.quadraticCurveTo(52, 74, 44, 80);
-  ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(62, 40); ctx.lineTo(74, 30); ctx.quadraticCurveTo(70, 38, 62, 44); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.arc(36, 44, 3, 0, Math.PI * 2); ctx.fillStyle = '#20242c'; ctx.fill();
+  ctx.moveTo(46, 30);
+  ctx.bezierCurveTo(64, 34, 66, 54, 52, 60);
+  ctx.bezierCurveTo(66, 66, 60, 80, 46, 82);
+  ctx.quadraticCurveTo(40, 70, 44, 62);
+  ctx.quadraticCurveTo(38, 50, 40, 42);
+  ctx.bezierCurveTo(30, 44, 30, 34, 46, 30);
+  ctx.closePath(); _fillGloss(ctx, 28, 84);
+  ctx.beginPath(); ctx.moveTo(46, 82); ctx.quadraticCurveTo(60, 86, 56, 94); ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(40, 32); ctx.lineTo(28, 30); ctx.lineTo(32, 38); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(52, 40); ctx.lineTo(64, 34); ctx.lineTo(58, 46); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 4; i++) { const y = 42 + i * 9; ctx.beginPath(); ctx.moveTo(38, y); ctx.quadraticCurveTo(52, y + 4, 60, y); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -28); ctx.stroke(); }
+  _eyes(ctx, 40, 38, 40, 38, 3);
 }
 function drawOctopus(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.arc(50, 38, 22, Math.PI, 0); ctx.lineTo(72, 46); ctx.lineTo(28, 46); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  for (let i = 0; i < 4; i++) { const x = 32 + i * 12; ctx.beginPath(); ctx.moveTo(x, 46); ctx.quadraticCurveTo(x - 4, 70, x + 2, 80); ctx.lineWidth = 4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
-  _eyes(ctx, 44, 36, 56, 36, 3.4);
+  ctx.beginPath(); ctx.arc(50, 40, 24, Math.PI, 0); ctx.lineTo(74, 52); ctx.quadraticCurveTo(50, 64, 26, 52); ctx.closePath(); _fillGloss(ctx, 18, 56);
+  for (let i = 0; i < 4; i++) { const x = 30 + i * 13; ctx.beginPath(); ctx.moveTo(x, 52); ctx.quadraticCurveTo(x - 6, 74, x + 2, 90); ctx.lineWidth = 6; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke();
+    for (let s = 0; s < 3; s++) { ctx.beginPath(); ctx.arc(x - 3 + s * 2, 60 + s * 10, 1.8, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, -30); ctx.fill(); } }
+  _eyes(ctx, 42, 38, 58, 38, 4);
 }
 function drawWhale(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(48, 50, 30, 20, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(76, 44); ctx.lineTo(92, 34); ctx.lineTo(90, 56); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(40, 30); ctx.lineTo(46, 18); ctx.lineTo(52, 30); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 60, 46, 60, 46, 3);
+  ctx.beginPath(); ctx.ellipse(46, 54, 32, 22, 0, 0, Math.PI * 2); _fillGloss(ctx, 32, 76);
+  ctx.beginPath(); ctx.moveTo(74, 48); ctx.lineTo(92, 38); ctx.lineTo(90, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 34); ctx.lineTo(48, 20); ctx.lineTo(56, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(20, 48); ctx.quadraticCurveTo(30, 44, 26, 54); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(40, 60, 16, 6, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  _eyes(ctx, 64, 50, 64, 50, 3);
 }
 function drawShark(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(20, 50); ctx.quadraticCurveTo(50, 30, 80, 48); ctx.lineTo(92, 44); ctx.lineTo(80, 58); ctx.quadraticCurveTo(50, 72, 20, 50); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(46, 32); ctx.lineTo(54, 16); ctx.lineTo(60, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(20, 50); ctx.lineTo(8, 42); ctx.lineTo(10, 58); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 70, 46, 70, 46, 2.6);
+  ctx.beginPath(); ctx.moveTo(14, 52); ctx.quadraticCurveTo(46, 30, 78, 48); ctx.lineTo(94, 44); ctx.lineTo(80, 60); ctx.quadraticCurveTo(46, 74, 14, 52); ctx.closePath(); _fillGloss(ctx, 30, 74);
+  ctx.beginPath(); ctx.moveTo(44, 34); ctx.lineTo(54, 16); ctx.lineTo(60, 36); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(14, 52); ctx.lineTo(4, 44); ctx.lineTo(8, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 4; i++) { const x = 30 + i * 8; ctx.beginPath(); ctx.moveTo(x, 40); ctx.quadraticCurveTo(x + 4, 50, x, 60); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(78, 52); ctx.lineTo(90, 50); ctx.lineTo(78, 58); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.6; ctx.stroke();
+  _eyes(ctx, 70, 46, 70, 46, 2.8);
 }
 function drawDolphin(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(18, 56); ctx.quadraticCurveTo(46, 34, 74, 44); ctx.quadraticCurveTo(86, 46, 90, 40); ctx.quadraticCurveTo(80, 56, 70, 60); ctx.quadraticCurveTo(46, 74, 18, 56); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(44, 38); ctx.lineTo(50, 22); ctx.lineTo(58, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(18, 56); ctx.lineTo(6, 50); ctx.lineTo(10, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 72, 46, 72, 46, 2.6);
+  ctx.beginPath(); ctx.moveTo(16, 58); ctx.quadraticCurveTo(44, 36, 72, 46); ctx.quadraticCurveTo(86, 48, 92, 40); ctx.quadraticCurveTo(82, 58, 70, 62); ctx.quadraticCurveTo(46, 76, 16, 58); ctx.closePath(); _fillGloss(ctx, 34, 78);
+  ctx.beginPath(); ctx.moveTo(44, 40); ctx.lineTo(50, 22); ctx.lineTo(58, 42); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(16, 58); ctx.lineTo(4, 52); ctx.lineTo(10, 64); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(60, 56); ctx.quadraticCurveTo(72, 62, 84, 56); ctx.lineWidth = 1.8; ctx.strokeStyle = OUT; ctx.stroke();
+  _eyes(ctx, 74, 46, 74, 46, 2.8);
 }
 function drawSquid(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(36, 22); ctx.quadraticCurveTo(64, 22, 64, 48); ctx.quadraticCurveTo(64, 60, 50, 60); ctx.quadraticCurveTo(36, 60, 36, 48); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  for (let i = 0; i < 5; i++) { const x = 38 + i * 6; ctx.beginPath(); ctx.moveTo(x, 58); ctx.quadraticCurveTo(x, 76, x + 2, 82); ctx.lineWidth = 3; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
-  _eyes(ctx, 44, 40, 56, 40, 3);
+  ctx.beginPath(); ctx.moveTo(34, 20); ctx.quadraticCurveTo(66, 18, 66, 48); ctx.quadraticCurveTo(66, 62, 50, 62); ctx.quadraticCurveTo(34, 62, 34, 48); ctx.closePath(); _fillGloss(ctx, 18, 62);
+  for (let i = 0; i < 5; i++) { const x = 38 + i * 6; ctx.beginPath(); ctx.moveTo(x, 60); ctx.quadraticCurveTo(x, 82, x + 2, 92); ctx.lineWidth = 4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 1.8; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(50, 44, 14, 8, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  _eyes(ctx, 44, 40, 56, 40, 3.4);
 }
 function drawShrimp(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(30, 64); ctx.quadraticCurveTo(20, 40, 44, 36); ctx.quadraticCurveTo(66, 34, 70, 50); ctx.quadraticCurveTo(64, 58, 52, 56); ctx.quadraticCurveTo(40, 60, 30, 64); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(70, 50); ctx.lineTo(84, 40); ctx.lineTo(82, 56); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 60, 42, 60, 42, 2.6);
+  ctx.beginPath(); ctx.moveTo(30, 40); ctx.quadraticCurveTo(70, 30, 72, 54); ctx.quadraticCurveTo(74, 74, 54, 80); ctx.quadraticCurveTo(40, 84, 34, 72); ctx.quadraticCurveTo(50, 64, 44, 50); ctx.quadraticCurveTo(40, 44, 30, 40); ctx.closePath(); _fillGloss(ctx, 28, 82);
+  for (let i = 0; i < 5; i++) { const y = 46 + i * 7; ctx.beginPath(); ctx.moveTo(36, y); ctx.quadraticCurveTo(56, y + 4, 70, y); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(30, 40); ctx.quadraticCurveTo(20, 30, 16, 18); ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke();
+  for (let i = 0; i < 4; i++) { const x = 46 + i * 6; ctx.beginPath(); ctx.moveTo(x, 76); ctx.lineTo(x - 2, 88); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke(); }
+  _eyes(ctx, 40, 44, 40, 44, 2.6);
 }
 function drawLobster(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(50, 48, 14, 22, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(36, 36); ctx.lineTo(20, 24); ctx.lineTo(28, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(64, 36); ctx.lineTo(80, 24); ctx.lineTo(72, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(50 + s * 12, 68); ctx.quadraticCurveTo(50 + s * 18, 80, 50 + s * 10, 86); ctx.lineWidth = 4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
-  _eyes(ctx, 44, 36, 56, 36, 3);
+  ctx.beginPath(); ctx.ellipse(50, 56, 18, 22, 0, 0, Math.PI * 2); _fillGloss(ctx, 34, 78);
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(50, 40); ctx.quadraticCurveTo(50 + d * 20, 30, 50 + d * 30, 18); ctx.lineWidth = 9; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.stroke(); }
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(50 + d * 10, 40); ctx.lineTo(50 + d * 34, 30); ctx.lineWidth = 8; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.stroke(); ctx.beginPath(); ctx.arc(50 + d * 34, 30, 6, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx); }
+  for (let i = 0; i < 4; i++) { const x = 44 + i * 4; ctx.beginPath(); ctx.moveTo(x, 72); ctx.lineTo(x, 90); ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke(); }
+  _eyes(ctx, 44, 44, 56, 44, 2.8);
 }
 function drawRay(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(50, 40); ctx.quadraticCurveTo(20, 30, 14, 50); ctx.quadraticCurveTo(40, 56, 50, 50); ctx.quadraticCurveTo(60, 56, 86, 50); ctx.quadraticCurveTo(80, 30, 50, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(50, 52); ctx.lineTo(50, 84); ctx.lineWidth = 4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
-  _eyes(ctx, 44, 42, 56, 42, 2.8);
+  ctx.beginPath(); ctx.moveTo(50, 44); ctx.quadraticCurveTo(14, 26, 8, 52); ctx.quadraticCurveTo(36, 60, 50, 52); ctx.quadraticCurveTo(64, 60, 92, 52); ctx.quadraticCurveTo(86, 26, 50, 44); ctx.closePath(); _fillGloss(ctx, 24, 62);
+  ctx.beginPath(); ctx.moveTo(50, 54); ctx.lineTo(50, 90); ctx.lineWidth = 5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(40, 40); ctx.quadraticCurveTo(26, 22, 42, 20); ctx.lineTo(48, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx); }
+  ctx.beginPath(); ctx.ellipse(50, 46, 16, 6, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  _eyes(ctx, 42, 40, 60, 40, 2.6);
 }
 function drawEel(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(24, 30); ctx.quadraticCurveTo(40, 50, 30, 66); ctx.quadraticCurveTo(22, 80, 40, 84); ctx.quadraticCurveTo(60, 70, 56, 56); ctx.quadraticCurveTo(52, 44, 44, 40); ctx.quadraticCurveTo(54, 36, 24, 30); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 30, 34, 30, 34, 2.6);
+  ctx.beginPath(); ctx.moveTo(20, 40);
+  for (let i = 0; i <= 8; i++) { const x = 20 + i * 8; const y = 40 + Math.sin(i * 0.9) * 16; if (i) ctx.lineTo(x, y); }
+  ctx.lineTo(84, 56); ctx.lineTo(84, 64);
+  for (let i = 8; i >= 0; i--) { const x = 20 + i * 8; const y = 50 + Math.sin(i * 0.9) * 16; ctx.lineTo(x, y); }
+  ctx.closePath(); _fillGloss(ctx, 30, 64);
+  for (let i = 0; i < 6; i++) { const x = 28 + i * 9; ctx.beginPath(); ctx.arc(x, 40 + Math.sin(i * 0.9) * 16, 2, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, -30); ctx.fill(); }
+  ctx.beginPath(); ctx.moveTo(20, 40); ctx.lineTo(10, 36); ctx.lineTo(14, 46); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 22, 42, 22, 42, 2.6);
 }
 function drawSwordfish(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(46, 52, 26, 16, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(70, 52); ctx.lineTo(96, 52); ctx.lineWidth = 4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(20, 52); ctx.lineTo(8, 44); ctx.lineTo(10, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(40, 38); ctx.lineTo(48, 26); ctx.lineTo(54, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 60, 48, 60, 48, 2.6);
+  ctx.beginPath(); ctx.moveTo(20, 52); ctx.quadraticCurveTo(50, 36, 76, 50); ctx.lineTo(90, 46); ctx.lineTo(76, 58); ctx.quadraticCurveTo(50, 70, 20, 52); ctx.closePath(); _fillGloss(ctx, 34, 70);
+  ctx.beginPath(); ctx.moveTo(76, 50); ctx.lineTo(96, 48); ctx.lineTo(76, 56); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(46, 38); ctx.lineTo(52, 22); ctx.lineTo(60, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(20, 52); ctx.lineTo(6, 44); ctx.lineTo(10, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 70, 48, 70, 48, 2.8);
 }
 function drawAngler(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.arc(50, 52, 22, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(50, 30); ctx.quadraticCurveTo(50, 12, 64, 16); ctx.lineTo(58, 26); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.arc(64, 16, 3, 0, Math.PI * 2); ctx.fillStyle = '#ffd54f'; ctx.fill();
-  ctx.beginPath(); ctx.moveTo(34, 64); ctx.lineTo(42, 70); ctx.lineTo(38, 66); ctx.lineTo(46, 72); ctx.lineTo(42, 68); ctx.lineTo(50, 74); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(50, 56, 28, 24, 0, 0, Math.PI * 2); _fillGloss(ctx, 32, 80);
+  ctx.beginPath(); ctx.moveTo(26, 44); ctx.quadraticCurveTo(20, 24, 38, 30); ctx.quadraticCurveTo(44, 38, 34, 44); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(38, 30); ctx.quadraticCurveTo(48, 12, 56, 28); ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke();
+  ctx.beginPath(); ctx.arc(54, 14, 4, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(34, 60); ctx.quadraticCurveTo(50, 70, 66, 60); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+  for (let i = 0; i < 5; i++) { const x = 36 + i * 7; ctx.beginPath(); ctx.moveTo(x, 60); ctx.lineTo(x - 3, 68); ctx.lineTo(x + 3, 68); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.2; ctx.stroke(); }
   _eyes(ctx, 44, 48, 44, 48, 3);
 }
 function drawNautilus(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.arc(50, 52, 26, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(50, 52, 22 - i * 5, 0.6, Math.PI - 0.6); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(52, 52, 26, 0, Math.PI * 2); _fillGloss(ctx, 26, 78);
+  for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(52, 52, 26 - i * 7, Math.PI * 0.1, Math.PI * 1.7); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  for (let i = 0; i < 5; i++) { const a = Math.PI * 0.2 + i * 0.4; ctx.beginPath(); ctx.moveTo(52 + Math.cos(a) * 8, 52 + Math.sin(a) * 8); ctx.quadraticCurveTo(52 + Math.cos(a) * 30, 52 + Math.sin(a) * 30, 52 + Math.cos(a) * 30, 52 + Math.sin(a) * 30); ctx.lineWidth = 3; ctx.strokeStyle = BODY; ctx.stroke(); }
+  _eyes(ctx, 70, 56, 70, 56, 2.6);
 }
 function drawConch(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(34, 70); ctx.quadraticCurveTo(24, 36, 56, 30); ctx.quadraticCurveTo(78, 30, 74, 54); ctx.quadraticCurveTo(70, 72, 34, 70); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.arc(56, 46, 8, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(34, 76); ctx.lineTo(32, 42); ctx.quadraticCurveTo(50, 22, 70, 42); ctx.lineTo(68, 76); ctx.closePath(); _fillGloss(ctx, 22, 78);
+  ctx.beginPath(); ctx.ellipse(50, 42, 20, 10, 0, Math.PI, 0); ctx.fillStyle = shade(BODY, 40); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(50, 42); ctx.lineTo(50, 76); ctx.lineWidth = 1.8; ctx.strokeStyle = shade(BODY, -28); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(36, 50); ctx.quadraticCurveTo(50, 44, 64, 52); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(34, 62); ctx.quadraticCurveTo(50, 56, 66, 64); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 40, 60, 40, 60, 2.4);
 }
 function drawScallop(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(50, 30); ctx.quadraticCurveTo(22, 34, 24, 64); ctx.quadraticCurveTo(50, 78, 76, 64); ctx.quadraticCurveTo(78, 34, 50, 30); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  for (let i = 1; i < 5; i++) { const x = 30 + i * 10; ctx.beginPath(); ctx.moveTo(50, 34); ctx.lineTo(x, 64); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(24, 72); ctx.quadraticCurveTo(24, 36, 50, 34); ctx.quadraticCurveTo(76, 36, 76, 72); ctx.quadraticCurveTo(50, 82, 24, 72); ctx.closePath(); _fillGloss(ctx, 32, 78);
+  for (let i = 0; i <= 6; i++) { const x = 28 + i * 8; ctx.beginPath(); ctx.moveTo(50, 36); ctx.lineTo(x, 74); ctx.lineWidth = 2; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(50, 40, 16, 6, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 44, 52, 56, 52, 2.4);
 }
 function drawClam(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(50, 56, 26, 18, 0, Math.PI, 0); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.arc(50, 56, 6, 0, Math.PI * 2); ctx.fillStyle = '#ffd54f'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(24, 60); ctx.quadraticCurveTo(24, 36, 50, 36); ctx.quadraticCurveTo(76, 36, 76, 60); ctx.quadraticCurveTo(50, 78, 24, 60); ctx.closePath(); _fillGloss(ctx, 32, 78);
+  ctx.beginPath(); ctx.moveTo(24, 60); ctx.quadraticCurveTo(50, 70, 76, 60); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -28); ctx.stroke();
+  for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.ellipse(50, 44, i * 9, 8, 0, Math.PI, 0); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -24); ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(50, 60, 10, 7, 0, 0, Math.PI); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();
+  _eyes(ctx, 44, 50, 56, 50, 2.2);
 }
 function drawUrchin(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.arc(50, 52, 18, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; ctx.beginPath(); ctx.moveTo(50 + Math.cos(a) * 16, 52 + Math.sin(a) * 16); ctx.lineTo(50 + Math.cos(a) * 26, 52 + Math.sin(a) * 26); ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.stroke(); }
+  for (let i = 0; i < 18; i++) { const a = i / 18 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(50 + Math.cos(a) * 16, 52 + Math.sin(a) * 16); ctx.lineTo(50 + Math.cos(a) * 30, 52 + Math.sin(a) * 30); ctx.lineWidth = 3; ctx.strokeStyle = shade(BODY, -18); ctx.stroke(); ctx.lineWidth = 1.4; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(50, 52, 16, 0, Math.PI * 2); _fillGloss(ctx, 36, 68);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; ctx.beginPath(); ctx.arc(50 + Math.cos(a) * 7, 52 + Math.sin(a) * 7, 2, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fill(); }
 }
 function drawSandDollar(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.arc(50, 52, 24, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; ctx.beginPath(); ctx.moveTo(50, 52); ctx.lineTo(50 + Math.cos(a) * 18, 52 + Math.sin(a) * 18); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(50, 52, 26, 28, 0, 0, Math.PI * 2); _fillGloss(ctx, 24, 80);
+  for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; ctx.beginPath(); ctx.moveTo(50, 52); ctx.quadraticCurveTo(50 + Math.cos(a) * 10, 52 + Math.sin(a) * 10, 50 + Math.cos(a) * 20, 52 + Math.sin(a) * 20); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(50, 52, 14, 14, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(40, 60); ctx.quadraticCurveTo(50, 66, 60, 60); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -22); ctx.stroke();
 }
 function drawCoral(ctx) {
-  for (const bx of [38, 58]) { ctx.fillStyle = BODY; ctx.beginPath(); ctx.moveTo(bx, 80); ctx.quadraticCurveTo(bx - 8, 50, bx, 30); ctx.lineTo(bx + 6, 30); ctx.quadraticCurveTo(bx + 10, 52, bx + 4, 80); ctx.closePath(); ctx.fill(); _outlineStroke(ctx); }
-  ctx.beginPath(); ctx.moveTo(48, 80); ctx.quadraticCurveTo(50, 44, 50, 24); ctx.lineWidth = 8; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+  for (const [x0, x1, y] of [[50, 30, 24], [50, 70, 28], [50, 50, 18]]) {
+    ctx.beginPath(); ctx.moveTo(50, 86); ctx.quadraticCurveTo((x0 + x1) / 2, (y + 86) / 2, x1, y); ctx.lineWidth = 10; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 3.4; ctx.strokeStyle = OUT; ctx.stroke();
+  }
+  for (let i = 0; i < 4; i++) { const x = 34 + i * 11; ctx.beginPath(); ctx.moveTo(x, 86); ctx.lineTo(x, 64); ctx.lineWidth = 2.4; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(50, 86); ctx.lineTo(50, 30); ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke();
 }
 function drawGuppy(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(44, 52, 18, 13, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(60, 52); ctx.lineTo(78, 40); ctx.lineTo(78, 64); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 52, 48, 52, 48, 3);
+  ctx.beginPath(); ctx.ellipse(44, 52, 20, 15, 0, 0, Math.PI * 2); _fillGloss(ctx, 36, 68);
+  ctx.beginPath(); ctx.moveTo(62, 52); ctx.lineTo(86, 38); ctx.lineTo(82, 52); ctx.lineTo(86, 66); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 38); ctx.lineTo(46, 26); ctx.lineTo(52, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(38, 48, 6, 3, 0, 0, Math.PI); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  _eyes(ctx, 56, 48, 56, 48, 2.8);
 }
 function drawGoldfish(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(44, 52, 20, 15, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(62, 52); ctx.quadraticCurveTo(82, 38, 80, 52); ctx.quadraticCurveTo(82, 66, 62, 52); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 52, 48, 52, 48, 3);
-}
-function drawMarlin(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(46, 54, 24, 13, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(68, 54); ctx.lineTo(96, 54); ctx.lineWidth = 4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(40, 42); ctx.lineTo(52, 22); ctx.lineTo(56, 44); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 58, 50, 58, 50, 2.6);
-}
-function drawParrot(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(46, 54, 22, 15, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(64, 54); ctx.lineTo(82, 44); ctx.lineTo(82, 64); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(82, 54); ctx.lineTo(94, 50); ctx.lineTo(94, 58); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(44, 54, 22, 17, 0, 0, Math.PI * 2); _fillGloss(ctx, 36, 72);
+  ctx.beginPath(); ctx.moveTo(62, 54); ctx.quadraticCurveTo(86, 36, 90, 54); ctx.quadraticCurveTo(86, 72, 62, 54); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 36); ctx.lineTo(48, 22); ctx.lineTo(56, 38); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(36, 44); ctx.quadraticCurveTo(40, 48, 36, 52); ctx.lineWidth = 2; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
   _eyes(ctx, 56, 50, 56, 50, 2.8);
 }
+function drawMarlin(ctx) {
+  ctx.beginPath(); ctx.moveTo(18, 52); ctx.quadraticCurveTo(48, 36, 74, 48); ctx.lineTo(88, 46); ctx.lineTo(74, 58); ctx.quadraticCurveTo(48, 68, 18, 52); ctx.closePath(); _fillGloss(ctx, 34, 70);
+  ctx.beginPath(); ctx.moveTo(74, 48); ctx.lineTo(98, 48); ctx.lineTo(74, 56); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(46, 38); ctx.lineTo(58, 20); ctx.lineTo(64, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(18, 52); ctx.lineTo(6, 44); ctx.lineTo(10, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 68, 46, 68, 46, 2.8);
+}
+function drawParrot(ctx) {
+  ctx.beginPath(); ctx.ellipse(46, 54, 26, 18, 0, 0, Math.PI * 2); _fillGloss(ctx, 34, 74);
+  ctx.beginPath(); ctx.moveTo(70, 52); ctx.lineTo(90, 44); ctx.lineTo(88, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 36); ctx.lineTo(48, 22); ctx.lineTo(56, 38); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(66, 56); ctx.lineTo(80, 60); ctx.lineTo(66, 64); ctx.closePath(); ctx.fillStyle = shade(BODY, 30); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(68, 56); ctx.lineTo(82, 62); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke();
+  _eyes(ctx, 60, 48, 60, 48, 3);
+}
 function drawSawfish(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(46, 54, 24, 13, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(68, 54); ctx.lineTo(96, 54); ctx.lineWidth = 4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
-  for (let i = 0; i < 4; i++) { const x = 74 + i * 6; ctx.beginPath(); ctx.moveTo(x, 50); ctx.lineTo(x, 46); ctx.moveTo(x, 58); ctx.lineTo(x, 62); ctx.lineWidth = 1.5; ctx.strokeStyle = OUT; ctx.stroke(); }
-  _eyes(ctx, 58, 50, 58, 50, 2.6);
+  ctx.beginPath(); ctx.moveTo(20, 52); ctx.quadraticCurveTo(48, 38, 72, 50); ctx.lineTo(84, 48); ctx.lineTo(72, 58); ctx.quadraticCurveTo(48, 68, 20, 52); ctx.closePath(); _fillGloss(ctx, 34, 70);
+  ctx.beginPath(); ctx.moveTo(72, 50); ctx.lineTo(98, 50); ctx.lineTo(72, 56); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 6; i++) { const x = 76 + i * 4; ctx.beginPath(); ctx.moveTo(x, 48); ctx.lineTo(x, 44); ctx.moveTo(x, 56); ctx.lineTo(x, 60); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(20, 52); ctx.lineTo(8, 44); ctx.lineTo(12, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 66, 46, 66, 46, 2.6);
 }
 function drawAnchovy(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(46, 54, 26, 9, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(70, 54); ctx.lineTo(86, 46); ctx.lineTo(86, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 58, 51, 58, 51, 2.4);
+  ctx.beginPath(); ctx.moveTo(22, 52); ctx.quadraticCurveTo(50, 40, 72, 50); ctx.lineTo(84, 48); ctx.lineTo(72, 56); ctx.quadraticCurveTo(50, 64, 22, 52); ctx.closePath(); _fillGloss(ctx, 38, 64);
+  ctx.beginPath(); ctx.moveTo(44, 44); ctx.lineTo(50, 32); ctx.lineTo(56, 46); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(22, 52); ctx.lineTo(12, 46); ctx.lineTo(16, 58); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(40, 50, 8, 3, 0, 0, Math.PI); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  _eyes(ctx, 66, 48, 66, 48, 2.6);
 }
 function drawBeta(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.moveTo(40, 40); ctx.quadraticCurveTo(70, 30, 66, 54); ctx.quadraticCurveTo(70, 78, 40, 68); ctx.quadraticCurveTo(34, 54, 40, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(40, 40); ctx.quadraticCurveTo(20, 30, 24, 50); ctx.quadraticCurveTo(20, 64, 40, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 56, 50, 56, 50, 3);
+  ctx.beginPath(); ctx.ellipse(44, 52, 18, 14, 0, 0, Math.PI * 2); _fillGloss(ctx, 36, 68);
+  ctx.beginPath(); ctx.moveTo(58, 52); ctx.quadraticCurveTo(82, 30, 90, 52); ctx.quadraticCurveTo(82, 74, 58, 52); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 38); ctx.quadraticCurveTo(46, 24, 52, 40); ctx.quadraticCurveTo(44, 30, 40, 38); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(44, 64); ctx.quadraticCurveTo(50, 80, 56, 64); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 56, 48, 56, 48, 2.8);
 }
 function drawHammerhead(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(50, 56, 24, 13, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(20, 56); ctx.lineTo(8, 48); ctx.lineTo(10, 64); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(44, 44); ctx.lineTo(30, 30); ctx.lineTo(56, 30); ctx.lineTo(56, 42); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(30, 30); ctx.lineTo(20, 26); ctx.lineTo(30, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(56, 30); ctx.lineTo(66, 26); ctx.lineTo(56, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  _eyes(ctx, 36, 30, 52, 30, 2.6);
+  ctx.beginPath(); ctx.ellipse(46, 58, 22, 16, 0, 0, Math.PI * 2); _fillGloss(ctx, 40, 74);
+  ctx.beginPath(); ctx.moveTo(70, 50); ctx.lineTo(92, 42); ctx.lineTo(92, 74); ctx.lineTo(70, 66); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(46, 42); ctx.lineTo(48, 26); ctx.lineTo(56, 44); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(20, 52); ctx.lineTo(6, 46); ctx.lineTo(12, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.arc(88, 50, 3, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.beginPath(); ctx.arc(88, 66, 3, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.4; ctx.stroke();
 }
 function drawWhaleShark(ctx) {
-  ctx.fillStyle = BODY;
-  ctx.beginPath(); ctx.ellipse(48, 52, 30, 19, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
-  ctx.beginPath(); ctx.moveTo(76, 46); ctx.lineTo(92, 36); ctx.lineTo(90, 58); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
-  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(36 + i * 6, 46, 2, 0, Math.PI * 2); ctx.fillStyle = OUT; ctx.fill(); }
-  _eyes(ctx, 62, 48, 62, 48, 2.6);
+  ctx.beginPath(); ctx.ellipse(46, 54, 32, 22, 0, 0, Math.PI * 2); _fillGloss(ctx, 32, 76);
+  ctx.beginPath(); ctx.moveTo(74, 48); ctx.lineTo(92, 38); ctx.lineTo(90, 60); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 34); ctx.lineTo(48, 20); ctx.lineTo(56, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 5; i++) { const x = 30 + i * 8; ctx.beginPath(); ctx.arc(x, 50 + (i % 2) * 8, 2.4, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, -28); ctx.fill(); }
+  for (let i = 0; i < 4; i++) { const x = 32 + i * 9; ctx.beginPath(); ctx.moveTo(x, 40); ctx.quadraticCurveTo(x + 4, 50, x, 60); ctx.lineWidth = 1.3; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  _eyes(ctx, 64, 50, 64, 50, 2.8);
+}
+
+// 36–70：新增海洋生物，沿用最初 HTML 版（push-slide-match.html）的釉质风——
+// 浅→深竖向渐变（_fillGloss）+ 统一描边 + 白肚高光 + 带高光眼睛 + 特征细节。
+function drawManatee(ctx) {
+  ctx.beginPath(); ctx.ellipse(48, 56, 26, 20, 0, 0, Math.PI * 2); _fillGloss(ctx, 36, 76);
+  ctx.beginPath(); ctx.moveTo(70, 56); ctx.lineTo(88, 46); ctx.lineTo(86, 66); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(30, 56); ctx.lineTo(20, 50); ctx.lineTo(24, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(44, 44, 14, 8, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(36, 44); ctx.lineTo(30, 36); ctx.moveTo(52, 44); ctx.lineTo(56, 36); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+  _eyes(ctx, 40, 46, 56, 46, 2.8);
+}
+function drawBarracuda(ctx) {
+  ctx.beginPath(); ctx.moveTo(16, 52); ctx.quadraticCurveTo(46, 38, 74, 50); ctx.lineTo(88, 48); ctx.lineTo(74, 58); ctx.quadraticCurveTo(46, 68, 16, 52); ctx.closePath(); _fillGloss(ctx, 34, 70);
+  ctx.beginPath(); ctx.moveTo(46, 40); ctx.lineTo(52, 24); ctx.lineTo(60, 42); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(16, 52); ctx.lineTo(4, 46); ctx.lineTo(10, 58); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(24, 50); ctx.lineTo(36, 50); ctx.lineTo(30, 56); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.4; ctx.stroke();
+  for (let i = 0; i < 4; i++) { const x = 40 + i * 8; ctx.beginPath(); ctx.moveTo(x, 42); ctx.lineTo(x + 4, 50); ctx.lineWidth = 1.2; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  _eyes(ctx, 68, 46, 68, 46, 2.6);
+}
+function drawFlyingfish(ctx) {
+  ctx.beginPath(); ctx.ellipse(46, 56, 24, 15, 0, 0, Math.PI * 2); _fillGloss(ctx, 38, 72);
+  ctx.beginPath(); ctx.moveTo(66, 56); ctx.lineTo(86, 50); ctx.lineTo(84, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(30, 44); ctx.quadraticCurveTo(48, 24, 64, 42); ctx.lineTo(60, 50); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(30, 68); ctx.quadraticCurveTo(48, 88, 64, 70); ctx.lineTo(60, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 42); ctx.lineTo(46, 30); ctx.lineTo(52, 44); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 58, 52, 58, 52, 2.6);
+}
+function drawGrouper(ctx) {
+  ctx.beginPath(); ctx.ellipse(46, 54, 27, 21, 0, 0, Math.PI * 2); _fillGloss(ctx, 32, 76);
+  ctx.beginPath(); ctx.moveTo(70, 54); ctx.lineTo(90, 42); ctx.lineTo(88, 66); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(32, 36); ctx.lineTo(46, 20); ctx.lineTo(52, 38); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(34, 70); ctx.lineTo(48, 84); ctx.lineTo(52, 68); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 6; i++) { const x = 34 + i * 6; ctx.beginPath(); ctx.arc(x, 48 + (i % 2) * 10, 2.6, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, -28); ctx.fill(); }
+  _eyes(ctx, 58, 48, 58, 48, 3);
+}
+function drawManta(ctx) {
+  ctx.beginPath(); ctx.moveTo(50, 46); ctx.quadraticCurveTo(14, 26, 8, 52); ctx.quadraticCurveTo(36, 60, 50, 50); ctx.quadraticCurveTo(64, 60, 92, 52); ctx.quadraticCurveTo(86, 26, 50, 46); ctx.closePath(); _fillGloss(ctx, 26, 60);
+  ctx.beginPath(); ctx.moveTo(50, 52); ctx.lineTo(50, 88); ctx.lineWidth = 5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(38, 40); ctx.quadraticCurveTo(24, 22, 42, 20); ctx.lineTo(48, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx); }
+  ctx.beginPath(); ctx.ellipse(50, 46, 16, 6, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(50, 46); ctx.lineTo(50, 78); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 42, 40, 60, 40, 2.6);
+}
+function drawCuttlefish(ctx) {
+  ctx.beginPath(); ctx.moveTo(34, 26); ctx.quadraticCurveTo(66, 22, 66, 48); ctx.quadraticCurveTo(66, 62, 50, 62); ctx.quadraticCurveTo(34, 62, 34, 48); ctx.closePath(); _fillGloss(ctx, 22, 64);
+  ctx.beginPath(); ctx.moveTo(38, 30); ctx.quadraticCurveTo(58, 26, 62, 32); ctx.lineWidth = 3; ctx.strokeStyle = shade(BODY, -22); ctx.stroke();
+  for (let i = 0; i < 5; i++) { const x = 38 + i * 6; ctx.beginPath(); ctx.moveTo(x, 60); ctx.quadraticCurveTo(x, 82, x + 2, 92); ctx.lineWidth = 3; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(46, 42, 14, 7, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 44, 42, 56, 42, 3);
+}
+function drawSeahare(ctx) {
+  ctx.beginPath(); ctx.ellipse(50, 56, 24, 19, 0, 0, Math.PI * 2); _fillGloss(ctx, 36, 76);
+  ctx.beginPath(); ctx.moveTo(28, 52); ctx.quadraticCurveTo(14, 32, 38, 40); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 4; i++) { const x = 42 + i * 6; ctx.beginPath(); ctx.moveTo(x, 72); ctx.quadraticCurveTo(x, 88, x + 2, 92); ctx.lineWidth = 3; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(40, 50, 8, 5, 0, 0, Math.PI); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 38, 50, 38, 50, 2.4);
+}
+function drawCoelacanth(ctx) {
+  ctx.beginPath(); ctx.ellipse(46, 52, 26, 16, 0, 0, Math.PI * 2); _fillGloss(ctx, 36, 68);
+  ctx.beginPath(); ctx.moveTo(68, 52); ctx.quadraticCurveTo(90, 42, 88, 52); ctx.quadraticCurveTo(90, 62, 68, 52); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(34, 36); ctx.lineTo(46, 20); ctx.lineTo(54, 38); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 66); ctx.lineTo(50, 82); ctx.lineTo(58, 66); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 5; i++) { const x = 34 + i * 7; ctx.beginPath(); ctx.moveTo(x, 44); ctx.lineTo(x, 60); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  _eyes(ctx, 58, 48, 58, 48, 2.6);
+}
+function drawLancetfish(ctx) {
+  ctx.beginPath(); ctx.moveTo(16, 52); ctx.quadraticCurveTo(48, 40, 74, 52); ctx.lineTo(90, 48); ctx.lineTo(74, 58); ctx.quadraticCurveTo(48, 66, 16, 52); ctx.closePath(); _fillGloss(ctx, 36, 66);
+  ctx.beginPath(); ctx.moveTo(74, 52); ctx.lineTo(94, 46); ctx.lineTo(94, 58); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 6; i++) { const x = 28 + i * 7; ctx.beginPath(); ctx.moveTo(x, 50); ctx.lineTo(x + 2, 42); ctx.moveTo(x, 54); ctx.lineTo(x + 2, 62); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(40, 40); ctx.lineTo(46, 24); ctx.lineTo(54, 42); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 64, 48, 64, 48, 2.4);
+}
+function drawSunfish(ctx) {
+  ctx.beginPath(); ctx.ellipse(50, 52, 30, 27, 0, 0, Math.PI * 2); _fillGloss(ctx, 24, 80);
+  ctx.beginPath(); ctx.moveTo(78, 52); ctx.lineTo(94, 42); ctx.lineTo(92, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 28); ctx.lineTo(50, 14); ctx.lineTo(60, 28); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(50, 52, 18, 18, 0, 0, Math.PI); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(40, 64); ctx.quadraticCurveTo(50, 70, 60, 64); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -22); ctx.stroke();
+  _eyes(ctx, 60, 46, 60, 46, 3);
+}
+function drawSpinyfish(ctx) {
+  ctx.beginPath(); ctx.arc(50, 54, 22, 0, Math.PI * 2); _fillGloss(ctx, 32, 76);
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(50 + Math.cos(a) * 21, 54 + Math.sin(a) * 21); ctx.lineTo(50 + Math.cos(a) * 33, 54 + Math.sin(a) * 33); ctx.lineWidth = 4; ctx.strokeStyle = shade(BODY, -20); ctx.stroke(); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(50, 60, 12, 7, 0, 0, Math.PI); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 40, 48, 60, 48, 3);
+}
+function drawTriggerfish(ctx) {
+  ctx.beginPath(); ctx.moveTo(28, 34); ctx.quadraticCurveTo(62, 26, 74, 50); ctx.quadraticCurveTo(68, 78, 38, 74); ctx.quadraticCurveTo(26, 60, 28, 34); ctx.closePath(); _fillGloss(ctx, 26, 78);
+  ctx.beginPath(); ctx.moveTo(68, 50); ctx.lineTo(90, 44); ctx.lineTo(88, 64); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(40, 32); ctx.lineTo(48, 16); ctx.lineTo(56, 34); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(52, 46, 6, 4, 0, 0, Math.PI); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  for (let i = 0; i < 3; i++) { const y = 52 + i * 7; ctx.beginPath(); ctx.moveTo(34, y); ctx.quadraticCurveTo(54, y + 4, 66, y); ctx.lineWidth = 1.3; ctx.strokeStyle = shade(BODY, -24); ctx.stroke(); }
+  _eyes(ctx, 52, 46, 52, 46, 2.8);
+}
+function drawFilefish(ctx) {
+  ctx.beginPath(); ctx.moveTo(26, 56); ctx.quadraticCurveTo(50, 34, 74, 44); ctx.lineTo(80, 56); ctx.quadraticCurveTo(50, 78, 26, 56); ctx.closePath(); _fillGloss(ctx, 34, 78);
+  ctx.beginPath(); ctx.moveTo(60, 46); ctx.lineTo(90, 38); ctx.lineTo(88, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(34, 42); ctx.lineTo(42, 26); ctx.lineTo(50, 44); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 4; i++) { const y = 46 + i * 7; ctx.beginPath(); ctx.moveTo(32, y); ctx.lineTo(62, y - 3); ctx.lineWidth = 1.3; ctx.strokeStyle = shade(BODY, -24); ctx.stroke(); }
+  _eyes(ctx, 54, 50, 54, 50, 2.6);
+}
+function drawPipefish(ctx) {
+  ctx.beginPath(); ctx.moveTo(18, 54);
+  for (let i = 0; i <= 10; i++) { const x = 18 + i * 6; const y = 54 + (i % 2 ? 4 : -4); if (i) ctx.lineTo(x, y); }
+  ctx.lineTo(80, 54); ctx.lineTo(80, 62);
+  for (let i = 10; i >= 0; i--) { const x = 18 + i * 6; const y = 62 + (i % 2 ? 4 : -4); ctx.lineTo(x, y); }
+  ctx.closePath(); _fillGloss(ctx, 44, 66);
+  ctx.beginPath(); ctx.ellipse(80, 50, 8, 8, 0, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(86, 50); ctx.lineTo(94, 48); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+  for (let i = 0; i < 4; i++) { const x = 30 + i * 10; ctx.beginPath(); ctx.moveTo(x, 54); ctx.lineTo(x, 64); ctx.lineWidth = 1.4; ctx.strokeStyle = OUT; ctx.stroke(); }
+  _eyes(ctx, 80, 47, 80, 47, 2.2);
+}
+function drawLeafy(ctx) {
+  ctx.beginPath(); ctx.moveTo(50, 22); ctx.quadraticCurveTo(80, 40, 72, 72); ctx.quadraticCurveTo(50, 84, 28, 72); ctx.quadraticCurveTo(20, 40, 50, 22); ctx.closePath(); _fillGloss(ctx, 22, 78);
+  ctx.beginPath(); ctx.moveTo(50, 28); ctx.lineTo(50, 78); ctx.lineWidth = 2; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  for (let i = 0; i < 6; i++) { const yy = 32 + i * 8; ctx.beginPath(); ctx.moveTo(50, yy); ctx.quadraticCurveTo(32, yy - 6, 24, yy - 12); ctx.moveTo(50, yy); ctx.quadraticCurveTo(68, yy - 6, 76, yy - 12); ctx.lineWidth = 3; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 1.4; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(50, 38, 5, 3, 0, 0, Math.PI); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 50, 38, 50, 38, 2.4);
+}
+function drawHatchetfish(ctx) {
+  ctx.beginPath(); ctx.moveTo(34, 44); ctx.quadraticCurveTo(66, 36, 64, 54); ctx.quadraticCurveTo(58, 82, 40, 78); ctx.quadraticCurveTo(30, 64, 34, 44); ctx.closePath(); _fillGloss(ctx, 34, 80);
+  ctx.beginPath(); ctx.moveTo(60, 50); ctx.lineTo(88, 42); ctx.lineTo(86, 62); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(38, 40); ctx.lineTo(46, 26); ctx.lineTo(54, 42); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(48, 52, 8, 10, 0, 0, Math.PI); ctx.lineWidth = 1.4; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+  _eyes(ctx, 50, 46, 50, 46, 2.6);
+}
+function drawLionfish(ctx) {
+  ctx.beginPath(); ctx.ellipse(46, 54, 22, 15, 0, 0, Math.PI * 2); _fillGloss(ctx, 38, 70);
+  ctx.beginPath(); ctx.moveTo(64, 54); ctx.lineTo(86, 44); ctx.lineTo(84, 64); ctx.closePath(); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 9; i++) { const a = -Math.PI / 2 + i * Math.PI / 8; ctx.beginPath(); ctx.moveTo(46 + Math.cos(a) * 16, 54 + Math.sin(a) * 11); ctx.lineTo(46 + Math.cos(a) * 34, 54 + Math.sin(a) * 26); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -18); ctx.stroke(); ctx.lineWidth = 1.4; ctx.strokeStyle = OUT; ctx.stroke(); }
+  for (let i = 0; i < 5; i++) { const x = 34 + i * 7; ctx.beginPath(); ctx.arc(x, 50 + (i % 2) * 8, 2.2, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, -26); ctx.fill(); }
+  _eyes(ctx, 56, 50, 56, 50, 2.6);
+}
+function drawNudibranch(ctx) {
+  ctx.beginPath(); ctx.ellipse(52, 60, 22, 15, 0, 0, Math.PI * 2); _fillGloss(ctx, 41, 79);
+  for (let i = 0; i < 5; i++) { const x = 36 + i * 8; ctx.beginPath(); ctx.moveTo(x, 50); ctx.quadraticCurveTo(x - 6, 26, x + 3, 18); ctx.lineWidth = 4.5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  for (let i = 0; i < 5; i++) { const x = 36 + i * 8; ctx.beginPath(); ctx.moveTo(x, 74); ctx.quadraticCurveTo(x - 7, 86, x + 1, 90); ctx.lineWidth = 3.5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(30, 54, 9, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
+  _eyes(ctx, 28, 51, 28, 51, 2);
+}
+function drawChiton(ctx) {
+  ctx.beginPath(); ctx.ellipse(50, 54, 26, 16, 0, 0, Math.PI * 2); _fillGloss(ctx, 38, 72);
+  for (let i = 0; i < 7; i++) { const x = 30 + i * 6.4; ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, 68); ctx.lineWidth = 2; ctx.strokeStyle = shade(BODY, -28); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(50, 39); ctx.lineTo(50, 69); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -32); ctx.stroke();
+}
+function drawConeShell(ctx) {
+  ctx.beginPath(); ctx.moveTo(34, 76); ctx.lineTo(34, 44); ctx.quadraticCurveTo(50, 24, 66, 44); ctx.lineTo(66, 76); ctx.closePath(); _fillGloss(ctx, 22, 76);
+  ctx.beginPath(); ctx.moveTo(34, 76); ctx.lineTo(34, 44); ctx.quadraticCurveTo(50, 24, 66, 44); ctx.lineTo(66, 76); ctx.closePath(); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(50, 44, 16, 7, 0, Math.PI, 0); ctx.fillStyle = shade(BODY, 50); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(50, 44); ctx.lineTo(50, 76); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -28); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(40, 44); ctx.lineTo(40, 70); ctx.moveTo(60, 44); ctx.lineTo(60, 70); ctx.lineWidth = 1.3; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+}
+function drawSpiralShell(ctx) {
+  ctx.beginPath(); ctx.arc(52, 54, 23, 0, Math.PI * 2); _fillGloss(ctx, 31, 79);
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(52, 54, 19 - i * 5, Math.PI * 0.2, Math.PI * 1.9); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(52, 54, 4, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, -28); ctx.fill();
+}
+function drawWhelk(ctx) {
+  ctx.beginPath(); ctx.moveTo(40, 74); ctx.quadraticCurveTo(26, 38, 56, 30); ctx.quadraticCurveTo(78, 34, 72, 58); ctx.quadraticCurveTo(64, 72, 40, 74); ctx.closePath(); _fillGloss(ctx, 30, 76);
+  ctx.beginPath(); ctx.arc(56, 48, 10, 0, Math.PI * 2); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(40, 60, 6, 10, -0.5, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, 40); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.moveTo(56, 38); ctx.quadraticCurveTo(48, 30, 40, 34); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+}
+function drawTurbanShell(ctx) {
+  ctx.beginPath(); ctx.moveTo(32, 76); ctx.lineTo(36, 44); ctx.quadraticCurveTo(50, 30, 64, 44); ctx.lineTo(68, 76); ctx.closePath(); _fillGloss(ctx, 27, 79);
+  ctx.beginPath(); ctx.ellipse(50, 44, 14, 6, 0, Math.PI, 0); ctx.fillStyle = shade(BODY, 46); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 3; i++) { const y = 50 + i * 9; ctx.beginPath(); ctx.ellipse(50, y, 19 - i * 1.5, 4, 0, Math.PI, 0); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(40, 76); ctx.lineTo(44, 50); ctx.moveTo(60, 76); ctx.lineTo(56, 50); ctx.lineWidth = 1.3; ctx.strokeStyle = shade(BODY, -24); ctx.stroke();
+}
+function drawBasketStar(ctx) {
+  ctx.beginPath(); ctx.arc(50, 50, 8, 0, Math.PI * 2); _fillGloss(ctx, 41, 59);
+  for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; ctx.beginPath(); ctx.moveTo(50 + Math.cos(a) * 8, 50 + Math.sin(a) * 8); ctx.quadraticCurveTo(50 + Math.cos(a) * 30, 50 + Math.sin(a) * 30, 50 + Math.cos(a) * 42, 50 + Math.sin(a) * 14); ctx.lineWidth = 4.5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; const mx = 50 + Math.cos(a) * 26, my = 50 + Math.sin(a) * 26; for (const d of [-0.4, 0.4]) { ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx + Math.cos(a + d) * 12, my + Math.sin(a + d) * 12); ctx.lineWidth = 2.4; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 1.2; ctx.strokeStyle = OUT; ctx.stroke(); } }
+}
+function drawFeatherStar(ctx) {
+  ctx.beginPath(); ctx.arc(50, 56, 7, 0, Math.PI * 2); _fillGloss(ctx, 48, 64);
+  for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(50, 56); ctx.quadraticCurveTo(50 + Math.cos(a) * 26, 56 + Math.sin(a) * 26, 50 + Math.cos(a) * 42, 56 + Math.sin(a) * 14); ctx.lineWidth = 4.5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); for (let k = 1; k <= 3; k++) { const t = k / 4; const x = 50 + Math.cos(a) * 42 * t, y = 56 + Math.sin(a) * 42 * t; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a + 1.3) * 7, y + Math.sin(a + 1.3) * 7); ctx.lineTo(x + Math.cos(a - 1.3) * 7, y + Math.sin(a - 1.3) * 7); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, 20); ctx.stroke(); } }
+}
+function drawSalp(ctx) {
+  for (let i = 0; i < 3; i++) {
+    const x = 32 + i * 18;
+    ctx.beginPath(); ctx.ellipse(x, 50, 12, 19, 0, 0, Math.PI * 2); _fillGloss(ctx, 31, 69);
+    ctx.beginPath(); ctx.ellipse(x, 42, 7, 4, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 11, 50); ctx.lineTo(x + 11, 50); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -30); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 4, 33); ctx.lineTo(x - 4, 67); ctx.lineWidth = 1.3; ctx.strokeStyle = shade(BODY, -22); ctx.stroke();
+  }
+}
+function drawIsopod(ctx) {
+  ctx.beginPath(); ctx.ellipse(50, 52, 25, 16, 0, 0, Math.PI * 2); _fillGloss(ctx, 36, 68);
+  for (let i = 1; i < 7; i++) { const x = 30 + i * 8; ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, 68); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  for (let i = 0; i < 7; i++) { const x = 32 + i * 6; ctx.beginPath(); ctx.moveTo(x, 66); ctx.lineTo(x - 3, 84); ctx.moveTo(x, 38); ctx.lineTo(x - 3, 20); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(70, 50, 5, 4, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fill();
+  _eyes(ctx, 70, 50, 70, 50, 2.4);
+}
+function drawSponge(ctx) {
+  ctx.beginPath(); ctx.moveTo(38, 84); ctx.lineTo(34, 36); ctx.quadraticCurveTo(50, 24, 66, 36); ctx.lineTo(62, 84); ctx.closePath(); _fillGloss(ctx, 24, 84);
+  ctx.beginPath(); ctx.ellipse(50, 34, 16, 8, 0, Math.PI, 0); ctx.fillStyle = shade(BODY, 48); ctx.fill(); _outlineStroke(ctx);
+  ctx.beginPath(); ctx.ellipse(52, 58, 7, 12, 0, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, 42); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 4; i++) { const y = 46 + i * 10; ctx.beginPath(); ctx.moveTo(38, y); ctx.lineTo(34, y); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -24); ctx.stroke(); }
+  for (let i = 0; i < 5; i++) { const x = 44 + i * 5; ctx.beginPath(); ctx.arc(x, 66, 2, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, 30); ctx.fill(); }
+}
+function drawBranchy(ctx) {
+  ctx.beginPath(); ctx.moveTo(50, 86); ctx.lineTo(50, 52); ctx.lineWidth = 11; ctx.strokeStyle = BODY; ctx.stroke();
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(50, 54); ctx.quadraticCurveTo(50 + d * 26, 44, 50 + d * 34, 24); ctx.lineWidth = 9; ctx.strokeStyle = BODY; ctx.stroke(); }
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(50, 54); ctx.quadraticCurveTo(50 + d * 26, 44, 50 + d * 34, 24); ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke(); }
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(50 + d * 22, 36); ctx.quadraticCurveTo(50 + d * 27, 28, 50 + d * 31, 20); ctx.lineWidth = 6; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(50, 86); ctx.lineTo(50, 52); ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke();
+}
+function drawBrittleStar(ctx) {
+  ctx.beginPath(); ctx.arc(50, 50, 10, 0, Math.PI * 2); _fillGloss(ctx, 40, 60);
+  for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; ctx.beginPath(); ctx.moveTo(50 + Math.cos(a) * 10, 50 + Math.sin(a) * 10); ctx.quadraticCurveTo(50 + Math.cos(a) * 36, 50 + Math.sin(a) * 36, 50 + Math.cos(a) * 42, 50 + Math.sin(a) * 24); ctx.lineWidth = 3.5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; const mx = 50 + Math.cos(a) * 22, my = 50 + Math.sin(a) * 22; for (const d of [-0.3, 0.3]) { ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx + Math.cos(a + d) * 8, my + Math.sin(a + d) * 8); ctx.lineWidth = 1.4; ctx.strokeStyle = OUT; ctx.stroke(); } }
+}
+function drawSeaCucumber(ctx) {
+  ctx.beginPath(); ctx.ellipse(50, 56, 23, 17, 0, 0, Math.PI * 2); _fillGloss(ctx, 39, 73);
+  for (let i = 0; i < 6; i++) { const x = 40 + i * 4; ctx.beginPath(); ctx.arc(x, 40, 3, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fill(); }
+  ctx.beginPath(); ctx.arc(28, 56, 7, 0, Math.PI * 2); ctx.fill(); _outlineStroke(ctx);
+  for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(28 + Math.cos(a) * 6, 56 + Math.sin(a) * 6); ctx.lineTo(28 + Math.cos(a) * 11, 56 + Math.sin(a) * 11); ctx.lineWidth = 1.6; ctx.strokeStyle = OUT; ctx.stroke(); }
+  _eyes(ctx, 26, 54, 26, 54, 2);
+}
+function drawHorseshoeCrab(ctx) {
+  ctx.beginPath(); ctx.ellipse(46, 50, 27, 19, 0, 0, Math.PI * 2); _fillGloss(ctx, 31, 69);
+  ctx.beginPath(); ctx.moveTo(70, 50); ctx.lineTo(94, 50); ctx.lineWidth = 5; ctx.strokeStyle = BODY; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke();
+  for (let i = 0; i < 5; i++) { const x = 34 + i * 7; ctx.beginPath(); ctx.moveTo(x, 66); ctx.lineTo(x - 3, 82); ctx.lineWidth = 2; ctx.strokeStyle = OUT; ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(40, 44, 6, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fill();
+  _eyes(ctx, 40, 44, 40, 44, 2.4);
+}
+function drawAmmonite(ctx) {
+  ctx.beginPath(); ctx.arc(50, 54, 25, 0, Math.PI * 2); _fillGloss(ctx, 29, 79);
+  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(50, 54, 21 - i * 4.5, Math.PI * 0.2, Math.PI * 1.85); ctx.lineWidth = 2.4; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(50, 54, 3, 0, Math.PI * 2); ctx.fillStyle = shade(BODY, -28); ctx.fill();
+}
+function drawTrilobite(ctx) {
+  ctx.beginPath(); ctx.ellipse(50, 54, 25, 17, 0, 0, Math.PI * 2); _fillGloss(ctx, 37, 71);
+  ctx.beginPath(); ctx.moveTo(50, 38); ctx.lineTo(50, 70); ctx.lineWidth = 2; ctx.strokeStyle = shade(BODY, -26); ctx.stroke();
+  for (let i = 1; i < 5; i++) { const y = 42 + i * 6; ctx.beginPath(); ctx.moveTo(28, y); ctx.lineTo(72, y); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, -26); ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(36, 48, 6, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fill();
+  _eyes(ctx, 36, 48, 36, 48, 2.2);
+}
+function drawCombJelly(ctx) {
+  ctx.beginPath(); ctx.ellipse(50, 52, 22, 30, 0, 0, Math.PI * 2); _fillGloss(ctx, 33, 71);
+  ctx.beginPath(); ctx.moveTo(34, 36); ctx.quadraticCurveTo(34, 22, 50, 22); ctx.quadraticCurveTo(66, 22, 66, 36); ctx.quadraticCurveTo(66, 70, 50, 80); ctx.quadraticCurveTo(34, 70, 34, 36); ctx.closePath(); ctx.lineWidth = 1.6; ctx.strokeStyle = shade(BODY, 24); ctx.stroke();
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(50 + i * 9, 28); ctx.lineTo(50 + i * 11, 74); ctx.lineWidth = 2.6; ctx.strokeStyle = shade(BODY, -22); ctx.stroke(); }
+  ctx.beginPath(); ctx.ellipse(42, 38, 5, 3, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fill();
+  ctx.beginPath(); ctx.ellipse(58, 38, 5, 3, 0, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fill();
 }
 
 module.exports = { drawCreature, shade };

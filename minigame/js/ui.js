@@ -246,14 +246,7 @@ class UI {
         roundRectPath(ctx, p.x, p.y, Math.max(4, p.w * ratio), p.h, p.h / 2);
         ctx.fill();
       }
-      // percentage fixed right of the bar end so the fish never covers it
       const fy = p.y + p.h / 2;
-      const pctX = Math.min(p.x + p.w + 40, this.layout.width - 8);
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      ctx.font = rf('700', 13);
-      ctx.fillText(`${Math.round(pct)}%`, pctX, fy);
       // level badge above the bar
       this._drawLevelBadge(ctx, p.x + p.w / 2, p.y - 16);
       // fish swimming along the bar following progress; 颜色随进度走彩虹

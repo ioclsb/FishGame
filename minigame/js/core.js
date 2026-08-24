@@ -11,29 +11,40 @@ const COLS = 10, ROWS = 14;      // 竖屏 10x14 布局
 const TOTAL_BLOCKS = COLS * ROWS; // 棋盘铺满 = 140 块
 const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 70 对
 
-// 关卡难度曲线：图案数随关卡“前快后平”地增长，到固定关后不再新增、难度固定。
-// 前期（前 50 关）图案数增长更快，避免少数图案反复出现导致聚堆、过于简单。
-const BASE_PATTERNS = 7;   // 第 1 关图案数（温和教学关）
-const MAX_PATTERNS = 35;   // 最终图案数（每种 4 块 = 140，铺满且全偶数）
-const FIXED_LEVEL = 300;   // 35 种在此关引入完毕，之后难度固定
+// 关卡难度曲线：图案数随关卡“前快后平”地增长，到 300 关引入完毕（每种恰好 2 块），
+// 之后不再新增图案；300→500 关仅靠“排布难度”（去聚堆）继续爬升，500 后封顶、关卡无限。
+// 前期（每图案约 5 对）比“一眼成片”难，但仍温和。
+const BASE_PATTERNS = 14;        // 第 1 关图案数（每图案 10 块 = 5 对）
+const MAX_PATTERNS = 70;         // 最终图案数（每种恰好 2 块 = 1 对，铺满 70 对）
+const PATTERN_FIXED_LEVEL = 300; // 图案数在 300 关引入完毕，之后不再新增
+const LAYOUT_FIXED_LEVEL = 500;  // 仅排布难度继续爬升到 500 关后封顶
+
+// 预览用：设为非空数组时，棋盘只铺这些图案（真实编号），其余暂不登场。
+// 设为 null 即恢复按关卡难度曲线引入全部 70 种。后台绘制/配色数据均保留不动。
+const RETAINED_PATTERNS = [1, 2, 3, 4, 5, 6, 7, 9, 10, 13, 19];
+function activePatternIds(level) {
+  if (RETAINED_PATTERNS && RETAINED_PATTERNS.length) return RETAINED_PATTERNS.slice();
+  const P = patternCountForLevel(level);
+  return Array.from({ length: P }, (_, i) => i + 1);
+}
 
 // ease-out 曲线：t∈[0,1]，(1-(1-t)²) 在前期上升快、后期趋平。
 function patternCountForLevel(level) {
   const L = Math.max(1, level | 0);
-  const t = Math.min(1, Math.max(0, (L - 1) / (FIXED_LEVEL - 1)));
+  const t = Math.min(1, Math.max(0, (L - 1) / (PATTERN_FIXED_LEVEL - 1)));
   const eased = 1 - (1 - t) * (1 - t);
   const P = Math.round(BASE_PATTERNS + (MAX_PATTERNS - BASE_PATTERNS) * eased);
   return Math.min(MAX_PATTERNS, Math.max(BASE_PATTERNS, P));
 }
 
-// 把 140 块按偶数均衡分配给 P 种图案（和=140，每种均为偶数，可两两消完）。
+// 把 140 块按偶数均衡分配给当前启用的图案集（和=140，每种均为偶数，可两两消完）。
 function countsForLevel(level) {
-  const P = patternCountForLevel(level);
-  const counts = new Array(P).fill(0);
+  const pids = activePatternIds(level);
+  const P = pids.length;
   let base = Math.floor(TOTAL_BLOCKS / P);
   if (base % 2 === 1) base -= 1;          // 取不超过均值的偶数
+  const counts = new Array(P).fill(base);
   let remaining = TOTAL_BLOCKS - base * P; // 必为偶数
-  for (let i = 0; i < P; i++) counts[i] = base;
   let idx = 0;
   while (remaining > 0) { counts[idx % P] += 2; remaining -= 2; idx++; }
   return counts;
@@ -43,10 +54,10 @@ function countsForLevel(level) {
 // 乘一个随关卡收紧的系数（前期接近随机=宽松，后期压到约 1/3=难）。
 // 生成时把相邻同图案对数压到该上限以下，即“去聚堆”，让同图案尽量分散。
 function targetAdjacencyForLevel(level) {
-  const P = patternCountForLevel(level);
+  const P = activePatternIds(level).length;
   const adjTotal = COLS * (ROWS - 1) + (COLS - 1) * ROWS; // 棋盘全部相邻边数 = 256
   const randomExp = adjTotal / P;                         // 随机铺满的期望相邻同图案对数
-  const t = Math.min(1, Math.max(0, (Math.max(1, level) - 1) / (FIXED_LEVEL - 1)));
+  const t = Math.min(1, Math.max(0, (Math.max(1, level) - 1) / (LAYOUT_FIXED_LEVEL - 1)));
   const ratio = 0.9 - t * (0.9 - 0.33);                   // L1≈0.9（接近随机）… L300≈0.33
   return Math.max(1, Math.round(randomExp * ratio));
 }
@@ -79,6 +90,7 @@ class GameCore {
     this.nextId = 1;
     this.undoSnapshot = null;   // a fresh board has no undo history
 
+    const pids = activePatternIds(this.level);
     const counts = countsForLevel(this.level);
     const target = targetAdjacencyForLevel(this.level);
 
@@ -86,7 +98,7 @@ class GameCore {
     let fallback = null; // 最接近目标（相邻同图案最少且≥1）的布局
     for (let attempt = 0; attempt < 60; attempt++) {
       const bag = [];
-      counts.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(i + 1); });
+      counts.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(pids[i]); });
       this._shuffleArray(bag);
       let bi = 0;
       for (let r = 0; r < ROWS; r++)
@@ -590,10 +602,11 @@ const selfTests = {
     checks.push(c.getPatternCount() === TOTAL_BLOCKS);
     checks.push(c.getTotalPairs() === TOTAL_PAIRS);
     const expected = countsForLevel(1);
-    const counts = new Array(expected.length + 1).fill(0);
+    const pids = activePatternIds(1);
+    const counts = new Array(Math.max.apply(null, pids) + 1).fill(0);
     for (const b of c.getBlocks()) counts[b.pattern]++;
-    checks.push(expected.every((n, i) => counts[i + 1] === n));
-    checks.push(counts.slice(1).every(n => n > 0 && n % 2 === 0));
+    checks.push(pids.every((pid, i) => counts[pid] === expected[i]));
+    checks.push(pids.every(pid => counts[pid] > 0 && counts[pid] % 2 === 0));
     let empty = 0;
     for (let r = 0; r < ROWS; r++)
       for (let col = 0; col < COLS; col++)
@@ -946,6 +959,6 @@ function runSelfTest(which = "all") {
 module.exports = {
   GameCore, selfTests, runSelfTest, coreWith,
   ROWS, COLS, TOTAL_BLOCKS, TOTAL_PAIRS,
-  BASE_PATTERNS, MAX_PATTERNS, FIXED_LEVEL,
+  BASE_PATTERNS, MAX_PATTERNS, PATTERN_FIXED_LEVEL, LAYOUT_FIXED_LEVEL,
   patternCountForLevel, countsForLevel, targetAdjacencyForLevel,
 };

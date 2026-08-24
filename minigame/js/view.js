@@ -23,15 +23,19 @@ function createCanvas() {
 // ================= GEOMETRY =================
 const G = { cell: 64, gap: 4, pitch: 68, boardW: 640, boardH: 640, dpr: 1 };
 const DPR_CAP = 2;
-const CELL_MAX = 80;
+const CELL_MAX = 120;
 
 // 棋盘背景统一为整片蓝色（去掉浅色渐变与格子浅色叠层）
 const BOARD_BG = '#103e66';
 
+// 所有方块的底色统一为同一种淡蓝色（与进度条填充同色系、略深），图案本身保留各自独特颜色作为区分
+const TILE_BASE = '#c9e6f8';
+
 function computeLayout(availW, availH) {
   const w = Math.max(160, availW);
   const h = Math.max(160, availH);
-  const gap = Math.max(2, Math.round(Math.min(w, h) * 0.006));
+  // 缩小格间空隙（约 3px，对齐参考图的紧凑拼盘感），让方块更大、图案更清晰
+  const gap = Math.max(1, Math.round(Math.min(w, h) * 0.002));
   const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
   const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
   const cell = Math.max(10, Math.min(cellW, cellH, CELL_MAX));
@@ -55,7 +59,7 @@ function hslToHex(h, s, l) {
   return '#' + f(0) + f(8) + f(4);
 }
 
-// 前 7 种为既有生物配色；之后 28 种用黄金角分布生成，保证彼此区分、不与前 7 撞色。
+// 前 7 种为既有生物配色（手选，互不撞色）。
 const PATTERN_COLORS = [
   '#f4772e', // 1  clownfish    (orange)
   '#2f6fe0', // 2  blue tang    (blue)
@@ -65,8 +69,14 @@ const PATTERN_COLORS = [
   '#ef4d3d', // 6  crab         (red)
   '#16bccb', // 7  starfish     (cyan)
 ];
-for (let i = 0; i < 28; i++) {
-  PATTERN_COLORS.push(hslToHex(i * 137.508 + 18, 68, 56));
+// 8–70：14 个易分辨基色 × 5 档明度 = 70 色，靠“色系+明度”分层区分。
+// 明度收紧到中明度区间（0.46–0.74），避免浅档发白、深档发灰，保证图案色始终鲜明。
+const BASE_HUES = [350, 18, 40, 55, 95, 135, 165, 192, 212, 230, 255, 278, 305, 328];
+const LIGHT_TIERS = [0.74, 0.67, 0.60, 0.53, 0.46];
+for (let i = 0; i < 63; i++) {
+  const hue = BASE_HUES[i % BASE_HUES.length];
+  const light = LIGHT_TIERS[Math.floor(i / BASE_HUES.length) % LIGHT_TIERS.length];
+  PATTERN_COLORS.push(hslToHex(hue, 68, light * 100));
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -108,44 +118,38 @@ class RenderView {
 
   static _bakeTile(pattern) {
     RenderView._stats.tiles++;
-    const color = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
     const [s, ctx] = RenderView._tileCanvas();
     const S = G.cell;
     const m = S * 0.04;
     const w = S - m * 2;
-    const r = w * 0.30;
+    const r = 2;
 
+    const t = Math.max(2, S * 0.05); // 伪 3D 厚度（向下偏移的侧面）
+    // 侧面：深一档底色、向下偏移，并带投影 —— 模拟平面块被“垫高”的立体感
     ctx.save();
-    ctx.shadowColor = 'rgba(4,16,30,0.45)';
-    ctx.shadowBlur = S * 0.08;
-    ctx.shadowOffsetY = S * 0.045;
-    const grad = ctx.createLinearGradient(0, m, 0, m + w);
-    grad.addColorStop(0, shade(color, 42));
-    grad.addColorStop(1, shade(color, -26));
-    ctx.fillStyle = grad;
+    ctx.shadowColor = 'rgba(4,16,30,0.40)';
+    ctx.shadowBlur = S * 0.06;
+    ctx.shadowOffsetY = S * 0.04;
+    ctx.fillStyle = shade(TILE_BASE, -30);
+    ctx.beginPath(); roundRectPath(ctx, m, m + t, w, w, r); ctx.fill();
+    ctx.restore();
+
+    // 顶面：平面底色，去掉镜面高光
+    ctx.fillStyle = TILE_BASE;
     ctx.beginPath(); roundRectPath(ctx, m, m, w, w, r); ctx.fill();
+
+    // 受光上沿 bevel（弱高光，非镜面），仅描上边营造斜面
+    ctx.save();
+    ctx.lineWidth = Math.max(1, S * 0.03);
+    ctx.strokeStyle = shade(TILE_BASE, 24);
+    ctx.beginPath(); roundRectPath(ctx, m + 0.5, m + 0.5, w - 1, w - 1, r); ctx.stroke();
     ctx.restore();
 
+    // 暗边 bevel：底部/右侧更深的细描边，强化厚度
     ctx.save();
-    ctx.beginPath(); roundRectPath(ctx, m + 1.5, m + 1.5, w - 3, w - 3, r - 1.5);
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = Math.max(1.5, S * 0.03);
-    ctx.stroke();
-    ctx.beginPath(); roundRectPath(ctx, m + 3, m + 3, w - 6, w - 6, r - 3);
-    ctx.strokeStyle = 'rgba(8,20,36,0.18)';
     ctx.lineWidth = Math.max(1, S * 0.02);
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.save();
-    ctx.beginPath();
-    roundRectPath(ctx, m + w * 0.10, m + w * 0.06, w * 0.80, w * 0.34, w * 0.17);
-    ctx.clip();
-    const gl = ctx.createLinearGradient(0, m, 0, m + w * 0.45);
-    gl.addColorStop(0, 'rgba(255,255,255,0.42)');
-    gl.addColorStop(1, 'rgba(255,255,255,0.05)');
-    ctx.fillStyle = gl;
-    ctx.fillRect(m, m, w, w * 0.5);
+    ctx.strokeStyle = 'rgba(8,20,36,0.20)';
+    ctx.beginPath(); roundRectPath(ctx, m + 0.5, m + 0.5, w - 1, w - 1, r); ctx.stroke();
     ctx.restore();
 
     return s;
@@ -155,7 +159,7 @@ class RenderView {
     RenderView._stats.creatures++;
     const [s, ctx] = RenderView._tileCanvas();
     ctx.drawImage(base, 0, 0, G.cell, G.cell);
-    const inset = G.cell * 0.14;
+    const inset = G.cell * 0.05;
     const size = G.cell - inset * 2;
     ctx.save();
     ctx.translate(inset, inset);
@@ -194,41 +198,6 @@ class RenderView {
     return s;
   }
 
-  static _starSprite(color = '#ffffff') {
-    const key = 'star:' + color + ':' + G.dpr;
-    let m = RenderView._starSprites;
-    if (!m) m = RenderView._starSprites = { entries: {}, count: 0 };
-    if (m.entries[key]) return m.entries[key];
-    if (m.count > 24) m = RenderView._starSprites = { entries: {}, count: 0 };
-    const D = 64;
-    const s = createCanvas();
-    s.width = Math.round(D * G.dpr); s.height = Math.round(D * G.dpr);
-    const c = s.getContext('2d');
-    c.scale(G.dpr, G.dpr);
-    const cx = D / 2, outer = cx * 0.92, inner = cx * 0.30;
-    // 柔光底
-    const g = c.createRadialGradient(cx, cx, 0, cx, cx, cx);
-    g.addColorStop(0, 'rgba(255,255,255,0.95)');
-    g.addColorStop(0.5, color === '#ffffff' ? 'rgba(200,240,255,0.5)' : color);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    c.fillStyle = g;
-    c.beginPath(); c.arc(cx, cx, cx, 0, Math.PI * 2); c.fill();
-    // 四角星
-    c.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const ang = -Math.PI / 2 + i * Math.PI / 4;
-      const rad = i % 2 ? inner : outer;
-      const x = cx + Math.cos(ang) * rad, y = cx + Math.sin(ang) * rad;
-      i ? c.lineTo(x, cx + Math.sin(ang) * rad) : c.moveTo(x, cx + Math.sin(ang) * rad);
-    }
-    c.closePath();
-    c.fillStyle = 'rgba(255,255,255,0.95)';
-    c.fill();
-    m.entries[key] = s;
-    m.count++;
-    return s;
-  }
-
   constructor(canvas, core, platform) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -247,7 +216,7 @@ class RenderView {
     this.hoverCell = null;
     this.particles = [];
     this.rings = [];
-    this.sparkles = [];
+    this.dragBubbles = [];
     this.floaters = [];
     this.pendingFx = [];
     this.bubbles = null;
@@ -300,23 +269,23 @@ class RenderView {
     return !!(this.drag || this.revert || this.pick || this.bounce ||
               this.hint || this.elimFlash ||
               this.particles.length > 0 || this.rings.length > 0 ||
-              this.sparkles.length > 0);
+              this.dragBubbles.length > 0);
   }
 
   static setPaused(p) { RenderView._paused = p; }
 
   _initBubbles() {
     this.bubbles = [];
-    // 数量更多、大小差异更大
-    const n = Math.max(20, Math.round(G.boardW / 22));
+    // 数量更多、稍大一些、大小差异更大
+    const n = Math.max(28, Math.round(G.boardW / 16));
     for (let i = 0; i < n; i++) {
       this.bubbles.push({
         x: Math.random() * G.boardW,
         y: Math.random() * G.boardH,
-        r: G.cell * (0.02 + Math.random() * 0.18),
+        r: G.cell * (0.04 + Math.random() * 0.24),
         sp: G.cell * (0.12 + Math.random() * 0.34),
         ph: Math.random() * Math.PI * 2,
-        a: 0.05 + Math.random() * 0.13,
+        a: 0.05 + Math.random() * 0.15,
       });
     }
   }
@@ -365,7 +334,7 @@ class RenderView {
       g.t += dt;
       if (g.t >= g.dur) this.rings.splice(i, 1);
     }
-    // 拖动时在被拖方块周围生成一闪一闪的小星星拖尾
+    // 拖动时在方块“身后”生成跟随的泡泡拖尾（更小、分布更散、有流动感）
     if (this.drag && !REDUCED_MOTION) {
       const dir = this.drag.dir;
       const d = GameCore.DIRS[dir];
@@ -373,25 +342,28 @@ class RenderView {
       for (const m of this.drag.group) {
         const cx = m.c * G.pitch + G.cell / 2 + d.dc * off;
         const cy = m.r * G.pitch + G.cell / 2 + d.dr * off;
-        if (Math.random() < 22 * dt) {
-          this.sparkles.push({
-            x: cx + (Math.random() - 0.5) * G.cell * 0.7,
-            y: cy + (Math.random() - 0.5) * G.cell * 0.7,
+        // 沿运动反方向拉开距离，再向两侧散开，形成一条身后流动的小泡泡带
+        const back = 0.3 + Math.random() * 0.9;
+        const side = (Math.random() - 0.5) * G.cell * 1.1;
+        const bx = cx - d.dc * G.cell * back - d.dr * side;
+        const by = cy - d.dr * G.cell * back + d.dc * side;
+        if (Math.random() < 14 * dt) {
+          this.dragBubbles.push({
+            x: bx,
+            y: by,
             t: 0,
-            life: 0.45 + Math.random() * 0.4,
-            r: G.cell * (0.10 + Math.random() * 0.10),
-            ph: Math.random() * Math.PI * 2,
-            vx: (Math.random() - 0.5) * 26,
-            vy: (Math.random() - 0.5) * 26 - 18,
-            color: Math.random() < 0.5 ? '#ffffff' : '#bfefff',
+            life: 0.55 + Math.random() * 0.6,
+            r: G.cell * (0.03 + Math.random() * 0.07),
+            vx: (Math.random() - 0.5) * 16 - d.dc * G.cell * 0.05,
+            vy: -G.cell * (0.07 + Math.random() * 0.16) - d.dr * G.cell * 0.05,
           });
         }
       }
     }
-    for (let i = this.sparkles.length - 1; i >= 0; i--) {
-      const s = this.sparkles[i];
+    for (let i = this.dragBubbles.length - 1; i >= 0; i--) {
+      const s = this.dragBubbles[i];
       s.t += dt;
-      if (s.t >= s.life) { this.sparkles.splice(i, 1); continue; }
+      if (s.t >= s.life) { this.dragBubbles.splice(i, 1); continue; }
       s.x += s.vx * dt;
       s.y += s.vy * dt;
     }
@@ -598,14 +570,18 @@ class RenderView {
       }
     }
 
-    // 小星星拖尾绘制在方块之前，使其出现在方块“身后”
-    for (const s of this.sparkles) {
-      const t = s.t / s.life;
-      const fade = Math.max(0, 1 - t);
-      const tw = 0.45 + 0.55 * Math.abs(Math.sin(s.t * 12 + s.ph));
-      ctx.globalAlpha = fade * tw;
-      const r = s.r * (0.7 + 0.3 * tw);
-      ctx.drawImage(RenderView._starSprite(s.color), s.x - r, s.y - r, r * 2, r * 2);
+    // 泡泡拖尾绘制在方块之前，使其出现在方块“身后”
+    for (const s of this.dragBubbles) {
+      const fade = Math.max(0, 1 - s.t / s.life);
+      ctx.globalAlpha = fade;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(190,235,255,0.6)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(s.x - s.r * 0.3, s.y - s.r * 0.3, s.r * 0.32, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.fill();
       ctx.globalAlpha = 1;
     }
 
