@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>手绘贴图预览（海洋消消乐）</title>
+<style>
+  body{background:#0b2233;color:#cfe6f5;font-family:system-ui,sans-serif;margin:0;padding:16px}
+  h1{font-size:16px;font-weight:600}
+  .note{font-size:12px;opacity:.7;margin:6px 0 14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
+  .cell{background:#0e2c40;border-radius:10px;padding:8px;text-align:center}
+  canvas{width:96px;height:96px;display:block;margin:0 auto;border-radius:8px}
+  .lbl{font-size:11px;margin-top:6px;opacity:.8}
+  .chk{width:96px;height:96px;display:block;margin:4px auto 0;border-radius:8px;
+       background:
+         linear-gradient(45deg,#555 25%,transparent 25%),
+         linear-gradient(-45deg,#555 25%,transparent 25%),
+         linear-gradient(45deg,transparent 75%,#555 75%),
+         linear-gradient(-45deg,transparent 75%,#555 75%);
+       background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0}
+  .row{display:flex;gap:6px;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<h1>手绘贴图预览 · 31 张（1–31）</h1>
+<div class="note">左：游戏内实际效果（蓝底方块 + 贴图）；右：透明通道检查（棋盘格=透明区）。对应 creatures.js 图案编号 1–31。</div>
+<div class="grid" id="g"></div>
+<script>
+const N = 31;
+const TILE_BASE = '#a6d8f0';
+function bakeTile(ctx, S){
+  const m=S*0.03, w=S-m*2, r=10, t=Math.max(3,S*0.10);
+  // 侧面
+  ctx.fillStyle = shade(TILE_BASE,-26);
+  rr(ctx,m,S-t,w,t+r); ctx.fill();
+  // 顶面
+  const g=ctx.createLinearGradient(0,m,0,m+w);
+  g.addColorStop(0,shade(TILE_BASE,18)); g.addColorStop(1,TILE_BASE);
+  ctx.fillStyle=g; rr(ctx,m,m,w,w); ctx.fill();
+  // 高光
+  ctx.fillStyle='rgba(255,255,255,0.22)'; rr(ctx,m+w*0.08,m+w*0.06,w*0.84,w*0.34); ctx.fill();
+}
+function shade(hex,amt){const n=parseInt(hex.slice(1),16);const r=clamp((n>>16)+amt),g=clamp(((n>>8)&255)+amt),b=clamp((n&255)+amt);return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0');}
+function clamp(v){return Math.max(0,Math.min(255,Math.round(v)));}
+function rr(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+const g=document.getElementById('g');
+for(let i=1;i<=N;i++){
+  const n=String(i).padStart(2,'0');
+  const cell=document.createElement('div'); cell.className='cell';
+  // in-game tile
+  const cv=document.createElement('canvas'); cv.width=96;cv.height=96;
+  const ctx=cv.getContext('2d');
+  bakeTile(ctx,96);
+  const img=new Image();
+  img.onload=()=>{const inset=96*0.10; ctx.drawImage(img,inset,inset,96-inset*2,96-inset*2);};
+  img.src='assets/patterns/'+n+'.png';
+  // checkerboard (transparency)
+  const chk=document.createElement('canvas'); chk.className='chk'; chk.width=96;chk.height=96;
+  const c2=chk.getContext('2d'); const im2=new Image();
+  im2.onload=()=>c2.drawImage(im2,0,0,96,96); im2.src='assets/patterns/'+n+'.png';
+  const row=document.createElement('div'); row.className='row'; row.appendChild(cv); row.appendChild(chk);
+  const lbl=document.createElement('div'); lbl.className='lbl'; lbl.textContent=n;
+  cell.appendChild(row); cell.appendChild(lbl); g.appendChild(cell);
+}
+</script>
+</body>
+</html>

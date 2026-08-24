@@ -589,9 +589,11 @@ class RenderView {
       const t = Math.min(1, (performance.now() - this.bounce.t0) / this.bounce.dur);
       if (t < 1) {
         pulsePattern = this.bounce.pattern;
-        // 同色方块来回晃动约 ±14°，幅度随时间衰减
-        const ampRad = (1 - t) * 0.247;
-        pulseAngle = Math.sin(t * Math.PI * 2.5) * ampRad;
+        const clicks = this.bounce.clicks || 1;
+        const attack = Math.min(1, t * 6); // 起始快速建立，避免突兀
+        const ampRad = (1 - t) * 0.18 * (1 + 0.35 * (clicks - 1)); // 连击幅度递增
+        const freq = 3.0 + (clicks - 1) * 1.0; // 连击频率递增
+        pulseAngle = Math.sin(t * Math.PI * freq) * ampRad * attack;
       } else {
     this.bounce = null;
     this.settle = null;
@@ -766,10 +768,14 @@ class RenderView {
   }
 
   triggerBounce(pattern) {
-    // 同色正在晃动时不打断，连续点击更顺滑
-    if (this.bounce && this.bounce.pattern === pattern) return;
-    this.bounce = { pattern, t0: performance.now(), dur: 450 };
-    this._animateUntil(450, () => this.render(), () => {
+    const now = performance.now();
+    if (this.bounce && this.bounce.pattern === pattern) {
+      // 连击：仅提升频率/幅度，不重置计时 → 旋转连续无跳变、无重影交叠
+      this.bounce.clicks = Math.min((this.bounce.clicks || 1) + 1, 4);
+    } else {
+      this.bounce = { pattern, t0: now, dur: 360, clicks: 1 };
+    }
+    this._animateUntil(this.bounce.dur, () => this.render(), () => {
       this.bounce = null;
       this.render();
     });

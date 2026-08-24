@@ -37,7 +37,8 @@ class UI {
     this.winBtn = null;         // {x, y, w, h}
     this.settingsCloseBtn = null; // {x, y, w, h}
     this.settingsRestartBtn = null; // {x, y, w, h}
-    this.pressId = null; // 底部按钮按压反馈：'settingsRestart' | 'settingsClose'
+    this.settingsResetBtn = null;   // {x, y, w, h} 回到第1关
+    this.pressId = null; // 底部按钮按压反馈：'settingsReset' | 'settingsRestart' | 'settingsClose'
     this.winPressId = null; // 结算“再来一局”按压反馈
     this.confetti = [];         // active confetti pieces
     this.fishX = 0;             // animated fish position along the bar
@@ -93,7 +94,7 @@ class UI {
   // works even before the first render of the panel).
   _layoutSettings(W, H) {
     const cardW = Math.min(W * 0.8, 320);
-    const cardH = 300;
+    const cardH = 320;
     const c = { x: Math.round((W - cardW) / 2), y: Math.round((H - cardH) / 2), w: cardW, h: cardH };
     const rowX = c.x + 20;
     const rowW = cardW - 40;
@@ -104,11 +105,12 @@ class UI {
       sound:   { x: rowX, y: c.y + 126, w: rowW, h: rowH },
       vibrate: { x: rowX, y: c.y + 174, w: rowW, h: rowH },
     };
-    const bh = 44;
+    const bh = 42;
     const gap = 12;
     const bw = Math.round((rowW - gap) / 2);
-    this.settingsRestartBtn = { x: c.x + 20, y: c.y + cardH - 64, w: bw, h: bh };
-    this.settingsCloseBtn = { x: c.x + 20 + bw + gap, y: c.y + cardH - 64, w: bw, h: bh };
+    this.settingsResetBtn = { x: c.x + 20, y: c.y + 224, w: rowW, h: bh };
+    this.settingsRestartBtn = { x: c.x + 20, y: c.y + cardH - 46, w: bw, h: bh };
+    this.settingsCloseBtn = { x: c.x + 20 + bw + gap, y: c.y + cardH - 46, w: bw, h: bh };
   }
 
   // ---- hit testing ------------------------------------------------------
@@ -132,6 +134,10 @@ class UI {
       if (this.settingsCloseBtn && x >= this.settingsCloseBtn.x && x <= this.settingsCloseBtn.x + this.settingsCloseBtn.w &&
           y >= this.settingsCloseBtn.y && y <= this.settingsCloseBtn.y + this.settingsCloseBtn.h) {
         return { zone: 'overlay', id: 'settingsClose' };
+      }
+      if (this.settingsResetBtn && x >= this.settingsResetBtn.x && x <= this.settingsResetBtn.x + this.settingsResetBtn.w &&
+          y >= this.settingsResetBtn.y && y <= this.settingsResetBtn.y + this.settingsResetBtn.h) {
+        return { zone: 'overlay', id: 'settingsReset' };
       }
       return { zone: 'overlay', id: null }; // block board while settings is up
     }
@@ -528,7 +534,9 @@ class UI {
     this._drawSettingsRow(ctx, this.settingsRows.sound, '音效', null, !!s.soundOn, 'sound');
     this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate, 'vibrate');
 
-    // 底部一排按钮：左“重新开始”（黄）、右“返回游戏”（呼吸缩放）
+    // 底部按钮：上排“回到第 1 关”（蓝），下排左“重新开始”（黄）、右“返回游戏”（绿）
+    const rbtn = this.settingsResetBtn;
+    if (rbtn) this._drawPanelButton(ctx, rbtn, '回到第 1 关', '#6ec6ff', '#2f8fd6', this.pressId === 'settingsReset', false, now, '#ffffff');
     const rb = this.settingsRestartBtn;
     if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#ffd54f', '#f5b400', this.pressId === 'settingsRestart', false, now, '#ffffff');
     const b = this.settingsCloseBtn;
@@ -811,7 +819,7 @@ class UI {
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = rf('700', 16);
-    ctx.fillText('再来一局', bx + bw / 2, by + bh / 2 + 1);
+    ctx.fillText('下一关', bx + bw / 2, by + bh / 2 + 1);
     ctx.restore();
     this.winBtn = { x: bx, y: by, w: bw, h: bh };
   }

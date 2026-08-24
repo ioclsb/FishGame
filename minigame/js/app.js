@@ -414,7 +414,7 @@ class App {
         else if (hit.id === 'settingsSound') this._toggleSound();
         else if (hit.id === 'settingsVibrate') this._toggleVibrate();
         else if (hit.id === 'settingsMusic') this._toggleMusic();
-        else if (hit.id === 'settingsRestart' || hit.id === 'settingsClose') {
+        else if (hit.id === 'settingsRestart' || hit.id === 'settingsClose' || hit.id === 'settingsReset') {
           // 按下时记录，松开再触发，以呈现按压点击效果
           this.ui.pressId = hit.id;
           this.sound.ui();
@@ -503,6 +503,9 @@ class App {
       if (id === 'settingsRestart') {
         this.uiState.settings = false;
         this.restart();
+      } else if (id === 'settingsReset') {
+        this.uiState.settings = false;
+        this.resetToLevel1();
       } else if (id === 'settingsClose') {
         this.uiState.settings = false;
         this.view.render();
@@ -640,6 +643,28 @@ class App {
     this.streak = 0;
     this.stats = this._freshStats();
     this.core.init(this.uiState.level);
+    this.view = new RenderView(this.boardCanvas, this.core, this.platform);
+    this._wireView(this.view);
+    this.uiState.stuck = false;
+    this.uiState.usedOnce = { undo: false, shuffle: false, hint: false };
+    this.setMsg('');
+    this.updateHud();
+  }
+
+  // 回到第 1 关：重置进度并存档，从头开始玩（等同于清掉 psm.level 缓存）
+  resetToLevel1() {
+    this.uiState.win = null;
+    this.ui.winPressId = null;
+    RenderView.setPaused(false);
+    if (this.view) this.view._bumpToken();
+    this.busy = false;
+    this.press = null;
+    this.picking = null;
+    this.streak = 0;
+    this.stats = this._freshStats();
+    this.uiState.level = 1;
+    try { storage.set('psm.level', '1'); } catch (e) {}
+    this.core.init(1);
     this.view = new RenderView(this.boardCanvas, this.core, this.platform);
     this._wireView(this.view);
     this.uiState.stuck = false;

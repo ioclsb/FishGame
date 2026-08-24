@@ -21,7 +21,10 @@ const LAYOUT_FIXED_LEVEL = 500;  // 仅排布难度继续爬升到 500 关后封
 
 // 预览用：设为非空数组时，棋盘只铺这些图案（真实编号），其余暂不登场。
 // 设为 null 即恢复按关卡难度曲线引入全部 70 种。后台绘制/配色数据均保留不动。
-const RETAINED_PATTERNS = [1, 2, 3, 4, 5, 6, 7, 9, 10, 13, 19];
+// 恢复正常游戏：按关卡难度曲线引入全部 70 种（第1关14种，第272关满70种）。
+// 已画好的手绘贴图 1–31 放 assets/patterns/NN.png，引擎优先用手绘；
+// 32–70 暂无手绘图，自动走程序化生物（drawCreature）兜底，画好后补图即替换。
+const RETAINED_PATTERNS = null;
 function activePatternIds(level) {
   if (RETAINED_PATTERNS && RETAINED_PATTERNS.length) return RETAINED_PATTERNS.slice();
   const P = patternCountForLevel(level);
