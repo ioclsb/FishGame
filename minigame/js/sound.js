@@ -296,6 +296,18 @@ class SoundManager {
     this._tone(220, 0.18, 'sine', 0.16, 0.02, 330);
   }
 
+  // 棋盘发牌入场音：厚重的“顿敲”质感——低频正弦顿点（下坠收尾）叠中低频木敲，
+  // 五连随上下相向入场的波浪节奏错落，起始一层低沉气声铺垫，无尾音
+  deal() {
+    this._initOnFirstUse();
+    this._noise(0.22, 0.05, 500, 1400, 0);
+    const t0 = 0.06;
+    [0, 0.09, 0.18, 0.27, 0.36].forEach((dt, i) => {
+      this._tone(212 - i * 14, 0.11, 'sine', 0.20, t0 + dt, 130);
+      this._click(0.06, 0.12, 620 - i * 40, 1.0, t0 + dt);
+    });
+  }
+
   win() {
     this._initOnFirstUse();
     this._tone(130.81, 0.5, 'sine', 0.22, 0);

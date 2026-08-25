@@ -15,6 +15,7 @@ const BTN_DEFS = [
   { id: 'undo', label: '撤销' },
   { id: 'shuffle', label: '打乱' },
   { id: 'hint', label: '提示' },
+  { id: 'restart', label: '重开' },
   { id: 'settings', label: '设置' },
 ];
 
@@ -23,6 +24,7 @@ const BTN_COLORS = {
   undo: '#15405c',
   shuffle: '#15405c',
   hint: '#15405c',
+  restart: '#15405c',
   settings: '#15405c',
 };
 
@@ -37,6 +39,13 @@ class UI {
     this.winBtn = null;         // {x, y, w, h}
     this.settingsCloseBtn = null; // {x, y, w, h}
     this.settingsRestartBtn = null; // {x, y, w, h}
+    // DEV-JUMP（临时）跳关面板几何，测试结束后连同相关代码一并删除
+    this.devCard = null;
+    this.devNumBox = null;
+    this.devStepBtns = null;   // {m10,m1,p1,p10}
+    this.devPresetBtns = [];   // [{n,x,y,w,h}]
+    this.devGoBtn = null;
+    this.devCloseBtn = null;
     this.tutorialSkipBtn = null; // {x, y, w, h} 教学关“跳过引导”
     this.pressId = null; // 底部按钮按压反馈：'settingsRestart' | 'settingsClose'
     this._settingsShownAt = null; // 设置面板入场动画起始时间
@@ -50,15 +59,17 @@ class UI {
     this.layout = layout;
     const W = layout.width;
     const board = layout.board;
+    // HUD 锚点用满盘基准矩形：前两关棋盘缩小时，进度条/关卡徽章/按钮行保持原位不动
+    const anchor = layout.fullBoard || board;
 
     // settings lives in the button row now; no corner button
     this.settingsBtn = null;
 
-    // progress label + bar: centered just above the board
-    const barW = Math.min(Math.round(board.w * 0.72), 240);
+    // progress label + bar: centered just above the board (anchored to full-board rect)
+    const barW = Math.min(Math.round(anchor.w * 0.72), 240);
     const barH = 10;
     const barX = Math.round((W - barW) / 2);
-    const barY = board.y - 34;
+    const barY = anchor.y - 34;
     this.progress = { x: barX, y: barY, w: barW, h: barH, labelY: barY - 12 };
 
     // main buttons: 居中横向排布于棋盘下方，整体上移、与棋盘下边缘留出间距
@@ -67,10 +78,10 @@ class UI {
     const btnArea = BTN_DEFS.length * (btnR * 2) + (BTN_DEFS.length - 1) * gap;
     const startX = Math.round((W - btnArea) / 2);
     const bottomLine = layout.height - (layout.safeBottom || 0);
-    const areaH = bottomLine - (board.y + board.h);
+    const areaH = bottomLine - (anchor.y + anchor.h);
     // 上移：从棋盘下边缘留一点间距起步，但保证按钮下方文字不超出屏幕
     const fromBoard = Math.max(12, Math.round(areaH * 0.20));
-    let btnY = board.y + board.h + fromBoard + btnR;
+    let btnY = anchor.y + anchor.h + fromBoard + btnR;
     btnY = Math.min(btnY, bottomLine - btnR - 16);
     btnY = Math.round(btnY);
     this.buttons = BTN_DEFS.map((b, i) => ({
@@ -108,12 +119,47 @@ class UI {
       sound:   { x: rowX, y: row0 + (rowH + rowGap), w: rowW, h: rowH },
       vibrate: { x: rowX, y: row0 + (rowH + rowGap) * 2, w: rowW, h: rowH },
     };
-    const bh = 46;
+    const bh = 56;
     const gap = 14;
-    const bw = Math.round((rowW - gap) / 2);
+    const bw = rowW;
+    const by = c.y + cardH - 72;
+    this.settingsRestartBtn = null;
+    this.settingsCloseBtn = { x: rowX, y: by, w: bw, h: bh };
+  }
+
+  // DEV-JUMP（临时）：跳关面板几何，确定性布局供命中测试使用
+  _layoutDev(W, H) {
+    const cardW = Math.min(W * 0.84, 340);
+    const cardH = 332;
+    const c = { x: Math.round((W - cardW) / 2), y: Math.round((H - cardH) / 2), w: cardW, h: cardH };
+    const rowX = c.x + 22;
+    const rowW = cardW - 44;
+    this.devCard = c;
+    this.devNumBox = { x: rowX + 30, y: c.y + 84, w: rowW - 60, h: 56 };
+    const gap = 12;
+    const bw4 = Math.round((rowW - gap * 3) / 4);
+    const sy = c.y + 158;
+    this.devStepBtns = {
+      m10: { x: rowX, y: sy, w: bw4, h: 48 },
+      m1:  { x: rowX + (bw4 + gap), y: sy, w: bw4, h: 48 },
+      p1:  { x: rowX + (bw4 + gap) * 2, y: sy, w: bw4, h: 48 },
+      p10: { x: rowX + (bw4 + gap) * 3, y: sy, w: bw4, h: 48 },
+    };
+    const bw5 = Math.round((rowW - gap * 4) / 5);
+    const py = c.y + 222;
+    this.devPresetBtns = [1, 5, 10, 25, 50].map((n, i) => ({
+      n,
+      x: rowX + i * (bw5 + gap),
+      y: py,
+      w: bw5,
+      h: 40,
+    }));
+    const bh = 46;
+    const bgap = 14;
+    const bww = Math.round((rowW - bgap) / 2);
     const by = c.y + cardH - 62;
-    this.settingsRestartBtn = { x: rowX, y: by, w: bw, h: bh };
-    this.settingsCloseBtn = { x: rowX + bw + gap, y: by, w: bw, h: bh };
+    this.devGoBtn = { x: rowX, y: by, w: bww, h: bh };
+    this.devCloseBtn = { x: rowX + bww + bgap, y: by, w: bww, h: bh };
   }
 
   // ---- hit testing ------------------------------------------------------
@@ -220,7 +266,7 @@ class UI {
     if (this.app.coachVisible()) this._drawCoach(ctx);
     if (this.app.winVisible()) this._drawWin(ctx, now);
     if (this.app.settingsVisible()) this._drawSettings(ctx, now);
-    else this._settingsShownAt = null;
+    this._settingsShownAt = null;
   }
 
   // 教学关引导层（非阻断：棋盘仍可正常操作）
@@ -557,6 +603,16 @@ class UI {
         L(4.6, -7.4, 3.6, -6.0);
         break;
       }
+      case 'restart': {
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 6.5, Math.PI * 0.25, Math.PI * 1.85);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(4.8, -6.2); ctx.lineTo(8, -6.3); ctx.lineTo(6.7, -3.2);
+        ctx.closePath(); ctx.fill();
+        break;
+      }
       case 'settings': {
         // sea urchin as fine line art
         ctx.lineWidth = 1.5;
@@ -633,7 +689,7 @@ class UI {
     const ty = c.y + 38;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = rf('700', 19);
+    ctx.font = rf('700', 24);
     const chW = ctx.measureText('设').width;
     const chGap = 8; // 两字间距
     const cxTitle = c.x + c.w / 2;
@@ -658,7 +714,7 @@ class UI {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillText('设', x1, ty + 1.5);
     ctx.fillText('置', x2, ty + 1.5);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#ffd54f';
     ctx.fillText('设', x1, ty);
     ctx.fillText('置', x2, ty);
 
@@ -667,11 +723,98 @@ class UI {
     this._drawSettingsRow(ctx, this.settingsRows.sound, '音效', null, !!s.soundOn, 'sound');
     this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate, 'vibrate');
 
-    // 底部按钮：左“重新开始”（黄）、右“返回游戏”（绿）
-    const rb = this.settingsRestartBtn;
-    if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#ffd54f', '#f5b400', this.pressId === 'settingsRestart', false, now, '#ffffff');
+    // 底部居中“返回游戏”按钮
     const b = this.settingsCloseBtn;
-    if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose', true, now, '#fff');
+    if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose', true, now, '#fff', 19, 4);
+
+    ctx.restore();
+  }
+
+  // DEV-JUMP（临时）：跳关面板绘制，测试结束后连同本方法一并删除
+  _drawDev(ctx, now) {
+    const L = this.layout;
+    const c = this.devCard;
+    const dev = this.app.uiState.dev;
+    if (!c || !dev) return;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(2,10,22,0.72)';
+    ctx.fillRect(0, 0, L.width, L.height);
+
+    // 卡片
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,5,15,0.6)';
+    ctx.shadowBlur = 40;
+    ctx.beginPath();
+    roundRectPath(ctx, c.x, c.y, c.w, c.h, 24);
+    const g = ctx.createLinearGradient(0, c.y, 0, c.y + c.h);
+    g.addColorStop(0, 'rgba(15,40,64,0.96)');
+    g.addColorStop(1, 'rgba(3,14,28,0.97)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(125,200,255,0.28)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+
+    // 标题
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = rf('700', 19);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('跳转关卡', c.x + c.w / 2, c.y + 34);
+    ctx.font = rf('400', 11);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('开发测试用 · 测试结束后移除', c.x + c.w / 2, c.y + 58);
+
+    // 目标关卡显示
+    const nb = this.devNumBox;
+    ctx.beginPath();
+    roundRectPath(ctx, nb.x, nb.y, nb.w, nb.h, 14);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(125,200,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.font = rf('800', 26);
+    ctx.fillStyle = '#ffe27a';
+    ctx.fillText(`第 ${dev.sel} 关`, nb.x + nb.w / 2, nb.y + nb.h / 2);
+
+    // 步进按钮 -10 / -1 / +1 / +10
+    const steps = [['m10', '-10'], ['m1', '-1'], ['p1', '+1'], ['p10', '+10']];
+    for (const [key, label] of steps) {
+      const r = this.devStepBtns[key];
+      ctx.beginPath();
+      roundRectPath(ctx, r.x, r.y, r.w, r.h, 12);
+      ctx.fillStyle = 'rgba(125,200,255,0.18)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(125,200,255,0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.font = rf('600', 16);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
+    }
+
+    // 快捷档位（当前选中高亮）
+    ctx.font = rf('400', 11);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    const mid = this.devPresetBtns[2];
+    ctx.fillText('快捷跳转', mid.x + mid.w / 2, this.devPresetBtns[0].y - 10);
+    for (const p of this.devPresetBtns) {
+      const on = p.n === dev.sel;
+      ctx.beginPath();
+      roundRectPath(ctx, p.x, p.y, p.w, p.h, 10);
+      ctx.fillStyle = on ? 'rgba(255,226,122,0.85)' : 'rgba(125,200,255,0.14)';
+      ctx.fill();
+      ctx.font = rf('600', 13);
+      ctx.fillStyle = on ? 'rgba(3,14,28,0.9)' : 'rgba(255,255,255,0.85)';
+      ctx.fillText(String(p.n), p.x + p.w / 2, p.y + p.h / 2);
+    }
+
+    // 底部：跳转（绿，松手生效）/ 关闭
+    this._drawPanelButton(ctx, this.devGoBtn, '跳转', '#58d97e', '#2fae5c', this.pressId === 'devGo', true, now, '#fff');
+    this._drawPanelButton(ctx, this.devCloseBtn, '关闭', '#a8bdd0', '#78909c', false, false, now, '#fff');
 
     ctx.restore();
   }
@@ -1002,7 +1145,12 @@ class UI {
     if (img && img.width) {
       const scale = sz / Math.max(img.width, img.height);
       const dw = img.width * scale, dh = img.height * scale;
+      ctx.save();
+      ctx.beginPath();
+      roundRectPath(ctx, -sz / 2 + 5, -sz / 2 + 5, sz - 10, sz - 10, 22);
+      ctx.clip();
       ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+      ctx.restore();
     }
     // 描边
     ctx.beginPath();
@@ -1028,8 +1176,8 @@ class UI {
     ctx.fillText('第 ' + cleared + ' 关 完成', cx + cardW / 2, cy + 158);
 
     // 按钮：“下一关”（淡蓝底，与上方图案同色；圆润字体、加大、字距舒展，同款立体凸起）
-    const bw = 180, bh = 46;
-    const bx = cx + (cardW - bw) / 2, by = cy + cardH - 56;
+    const bw = 180, bh = 56;
+    const bx = cx + (cardW - bw) / 2, by = cy + cardH - 70;
     this.winBtn = { x: bx, y: by, w: bw, h: bh };
     this._drawPanelButton(ctx, this.winBtn, '下一关', '#58d97e', '#2fae5c', this.winPressId === 'winRestart', true, now, '#fff', 20, 8);
   }

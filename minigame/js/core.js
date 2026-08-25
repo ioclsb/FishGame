@@ -11,34 +11,40 @@ const COLS = 9, ROWS = 12;      // 竖屏 9x12 布局（117 为奇数无法配�
 const TOTAL_BLOCKS = COLS * ROWS; // 棋盘铺满 = 108 块
 const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 54 对
 
-// 难度（图案种数）排程：L1–L2 体验略简单（棋盘不满格、图案少，好认）；L3 起棋盘满格（9x12），
-// 图案数从 L3 的约 13 种循序渐进地递增，约第 250 关铺满 MAX_PATTERNS（54 种，每种恰好 2 块），
-// 之后不再新增；到 LAYOUT_FIXED_LEVEL 仅靠“排布难度”（去聚堆）继续爬升，之后封顶、关卡无限。
-const BASE_PATTERNS = 6;        // 第 1 关图案数（体验，好认）
-const MAX_PATTERNS = 54;        // 最终/最大图案数（9x12 满盘 108 块 → 每图案至少 2 块 → 硬上限 54）
-const PATTERN_FIXED_LEVEL = 250;// 图案数约第 250 关引入完毕（铺满 54），之后不再新增；曲线前快后平
+// 难度（图案种数）排程：每关启用的“不同图案种数”D 随棋盘容量走带状区间——
+// 下限 ⌈N/4⌉（同图案至多 4 个仍能铺满的最少种数）、上限 min(MAX_PATTERNS, ⌊N/3⌋)
+// （⌊N/3⌋ 保证四连图案 ≥ 半数，从数学上杜绝“整盘全是两消”的极难局面）；
+// L3 起沿 ease-out 曲线在带内爬升，PATTERN_FIXED_LEVEL 后封顶，仅剩排布难度继续变化。
+// 每种图案每局固定 2 或 4 个：先各给 2 个，剩余块成对升级为 4。
+const MAX_PATTERNS = 46;        // 手绘贴图总数（assets/patterns/01..46.png）
+const PATTERN_FIXED_LEVEL = 250;// 图案种数约第 250 关到达带上限，之后不再新增；曲线前快后平
 const LAYOUT_FIXED_LEVEL = 500; // 仅排布难度继续爬升到 500 关后封顶
 
 // 预览用：设为非空数组时，棋盘只铺这些图案（真实编号），其余暂不登场。
-// 设为 null 即恢复按关卡难度排程引入全部 54 种。后台绘制/配色数据均保留不动。
-// 恢复正常游戏：按关卡难度排程引入全部 54 种（第1关 6 种，第 10 关满 54 种）。
-// 已画好的手绘贴图 1–31 放 assets/patterns/NN.png，引擎优先用手绘；
-// 32–54 暂无手绘图，自动走程序化生物（drawCreature）兜底，画好后补图即替换（55–70 暂不使用）。
+// 设为 null 即恢复按关卡难度带正常轮换。后台绘制/配色数据均保留不动。
 const RETAINED_PATTERNS = null;
-function activePatternIds(level) {
-  if (RETAINED_PATTERNS && RETAINED_PATTERNS.length) return RETAINED_PATTERNS.slice();
-  const P = regionPatternCount(level);
-  return Array.from({ length: P }, (_, i) => i + 1);
+
+// 非海洋主题彩蛋图（两张小人 + 一只小狗，编号取末三位）：
+// 仅在“整十关”（第 10、20、30……关）加入轮换池，其余关卡不出现
+const LATE_PATTERN_IDS = [44, 45, 46];
+
+function isEggLevel(level) {
+  return level >= 10 && level % 10 === 0;
 }
 
-// 每关启用图案种数：L1–L2 体验温和；L3 起满盘并沿 ease-out 曲线循序渐进增到 MAX_PATTERNS。
-function patternCountForLevel(level) {
-  const L = Math.max(1, level | 0);
-  if (L <= 2) return [BASE_PATTERNS, 9][L - 1] || 9; // L1=6, L2=9
-  const t = Math.min(1, Math.max(0, (L - 3) / (PATTERN_FIXED_LEVEL - 3)));
-  const eased = 1 - (1 - t) * (1 - t);
-  const P = Math.round(13 + (MAX_PATTERNS - 13) * eased); // L3≈13 → 满级 54
-  return Math.min(MAX_PATTERNS, Math.max(13, P));
+function activePatternIds(level) {
+  if (RETAINED_PATTERNS && RETAINED_PATTERNS.length) return RETAINED_PATTERNS.slice();
+  // 组建本关可用的图案池：非整十关不含彩蛋图
+  const egg = isEggLevel(level);
+  const pool = [];
+  for (let id = 1; id <= MAX_PATTERNS; id++) {
+    if (!egg && LATE_PATTERN_IDS.indexOf(id) !== -1) continue;
+    pool.push(id);
+  }
+  const D = Math.min(pool.length, regionPatternCount(level));
+  // 关卡轮换窗口起点：让全部手绘图随关卡推进轮番登场
+  const start = ((Math.max(1, level) - 1) * D) % pool.length;
+  return Array.from({ length: D }, (_, i) => pool[(start + i) % pool.length]);
 }
 
 // 前期“体验版”棋盘：L1–L2 不满格（仅高度递减），但用满 9 列宽避免“空一格”；L3 起满格 9x12。
@@ -52,39 +58,42 @@ function boardDimsForLevel(level) {
   return table[level] || { rows: ROWS, cols: COLS };
 }
 
-// 启用的图案数：不超过“每图案至少 2 块”的容量上限（满盘 108 块 → 最多 54 种）。
+// 每关启用图案种数：带状区间内沿 ease-out 曲线爬升（教学关哨兵固定 2 种）
 function regionPatternCount(level) {
   if (level <= 0) return 2; // 教学关只用 2 种
-  const P = patternCountForLevel(level);
   const { rows, cols } = boardDimsForLevel(level);
-  const cap = Math.floor((rows * cols) / 2);
-  return Math.max(3, Math.min(P, cap));
+  const N = rows * cols;
+  const dMin = Math.max(2, Math.ceil(N / 4));             // 全部 ≤4 个仍能铺满的最少种数
+  const dMax = Math.min(MAX_PATTERNS, Math.floor(N / 3)); // 四连 ≥ 半数的最多种数
+  const t = Math.min(1, Math.max(0, (level - 3) / (PATTERN_FIXED_LEVEL - 3)));
+  const eased = 1 - (1 - t) * (1 - t);
+  return Math.max(dMin, Math.min(dMax, Math.round(dMin + (dMax - dMin) * eased)));
 }
 
-// 把 108 块按偶数均衡分配给当前启用的图案集（和=108，每种均为偶数，可两两消完）。
+// 把 N 块按“每种 2 或 4 个”分配给当前启用的图案集（和=N，每种均为偶数，可两两消完；
+// 且必含四连——禁止出现整盘每个图案只剩 2 个的极难局面）。
 function countsForLevel(level, totalBlocks) {
   const pids = activePatternIds(level);
   const P = pids.length;
   const N = (totalBlocks != null) ? totalBlocks : TOTAL_BLOCKS;
-  let base = Math.floor(N / P);
-  if (base % 2 === 1) base -= 1;          // 取不超过均值的偶数
-  const counts = new Array(P).fill(base);
-  let remaining = N - base * P; // 必为偶数
-  let idx = 0;
-  while (remaining > 0) { counts[idx % P] += 2; remaining -= 2; idx++; }
+  const counts = new Array(P).fill(2);   // 先每种 2 个
+  let rem = N - 2 * P;                    // 剩余成对升级为 4（带状约束保证 rem/2 ≤ P）
+  for (let i = 0; rem > 0 && i < P; i++, rem -= 2) counts[i] += 2;
+  for (let j = 0; rem > 0; j++, rem -= 2) counts[j % P] += 2; // 兜底（理论不触发）
   return counts;
 }
 
-// 相邻同图案“目标上限”：以随机铺满的期望对数 256/P 为基准，
-// 乘一个随关卡收紧的系数（前期接近随机=宽松，后期压到约 1/3=难）。
-// 生成时把相邻同图案对数压到该上限以下，即“去聚堆”，让同图案尽量分散。
+// 相邻同图案“目标上限”：以随机铺满的期望对数 randomExp 为基准乘系数；
+// 后期只“适度”去聚堆（比例 0.9→0.7），并加随种数 P 增长的绝对下限——
+// 保证盘面上始终有适量可点消的相邻对，显著降低“无可消除”死局概率，
+// 同时上限封住大团聚集（不会出现很多连片图案）。
 function targetAdjacencyForLevel(level) {
   const P = activePatternIds(level).length;
-  const adjTotal = COLS * (ROWS - 1) + (COLS - 1) * ROWS; // 棋盘全部相邻边数（随 COLS/ROWS 自动：8x12 = 172）
+  const adjTotal = COLS * (ROWS - 1) + (COLS - 1) * ROWS; // 棋盘全部相邻边数
   const randomExp = adjTotal / P;                         // 随机铺满的期望相邻同图案对数
   const t = Math.min(1, Math.max(0, (Math.max(1, level) - 1) / (LAYOUT_FIXED_LEVEL - 1)));
-  const ratio = 0.9 - t * (0.9 - 0.33);                   // L1≈0.9（接近随机）… L300≈0.33
-  return Math.max(1, Math.round(randomExp * ratio));
+  const ratio = 0.9 - t * (0.9 - 0.7);                    // L1≈0.9（接近随机）… 后期≈0.7
+  return Math.max(Math.round(P * 0.25), Math.round(randomExp * ratio));
 }
 
 
@@ -98,6 +107,8 @@ class GameCore {
     this.level = 1;
     this.rows = ROWS;
     this.cols = COLS;
+    this.r0 = 0;           // 活动区域在本关网格中的起始行（随 _generateLayout 更新）
+    this.c0 = 0;           // 活动区域起始列
     this.totalBlocks = TOTAL_BLOCKS;
     this.totalPairs = TOTAL_PAIRS;
     this.init(level);
@@ -132,14 +143,16 @@ class GameCore {
     this.totalPairs = this.totalBlocks / 2;
     const r0 = Math.floor((ROWS - rows) / 2);
     const c0 = Math.floor((COLS - cols) / 2);
+    this.r0 = r0;
+    this.c0 = c0;
 
     const pids = activePatternIds(this.level);
     const counts = countsForLevel(this.level, this.totalBlocks);
     const target = targetAdjacencyForLevel(this.level);
 
-    // 多次尝试：随机铺底 + 贪心去聚堆，直到“有可点开局(≥1对)且达到目标上限”。
-    let fallback = null; // 最接近目标（相邻同图案最少且≥1）的布局
-    for (let attempt = 0; attempt < 60; attempt++) {
+    const range = this._adjacencyRange();
+    let best = null;
+    for (let attempt = 0; attempt < 300; attempt++) {
       const bag = [];
       counts.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(pids[i]); });
       this._shuffleArray(bag);
@@ -148,18 +161,16 @@ class GameCore {
         for (let c = 0; c < cols; c++)
           this.grid[r0 + r][c0 + c] = bag[bi++];
 
-      this._declutter(target); // 原地交换去聚堆，保持各图案数量不变
-
-      const adj = this._adjacencySamePairs();
-      if (adj >= 1 && adj <= target) break;       // 既“活”（可点开局）又够打散
-      if (adj >= 1 && (!fallback || adj < fallback.adj)) {
-        fallback = { adj, grid: this.grid.map(row => row.slice()) };
-      }
+      const stats = this._adjacencyStats();
+      const rangeGap = stats.adj < range.min ? range.min - stats.adj : Math.max(0, stats.adj - range.max);
+      const progress = rangeGap === 0 && stats.chain === 0 ? this._clickClearProgress() : 0;
+      const score = rangeGap * 1000 + stats.chain * 200 + (this.totalPairs - progress) * 10 + Math.abs(stats.adj - target);
+      if (!best || score < best.score) best = { score, grid: this.grid.map(row => row.slice()) };
       for (let r = 0; r < rows; r++)
         for (let c = 0; c < cols; c++)
           this.grid[r0 + r][c0 + c] = 0; // 仅清空区域以便下次尝试
     }
-    if (fallback) this.grid = fallback.grid;
+    if (best) this.grid = best.grid;
 
     // 由最终 grid 重建 blocks
     this.blocks = [];
@@ -170,94 +181,81 @@ class GameCore {
         if (v) this.blocks.push({ id: this.nextId++, pattern: v, r, c });
       }
 
-    if (this._adjacencySamePairs() < 1) this._ensureOneAdjacency(); // 极端兜底：保证至少可点开局
   }
 
-  // 贪心交换去聚堆：把相邻同图案对数压到 target 以下，但始终保持 ≥1 对（保证可点开局）。
-  // 交换只是“互换两个格子的图案”，各图案出现次数天然不变。
-  _declutter(target) {
-    let cur = this._adjacencySamePairs();
-    if (cur <= target) return;
-    let iters = 0;
-    const MAX_ITERS = 1500;
-    while (cur > target && iters < MAX_ITERS) {
-      iters++;
-      const pair = this._randomAdjacentSamePair();
-      if (!pair) break;
-      const [, b] = pair;
-      const v = this.grid[pair[0].r][pair[0].c];
-      const c = this._randomCellWithPatternNot(v);
-      if (!c) break;
-      const bPat = this.grid[b.r][b.c];
-      const cPat = this.grid[c.r][c.c];
-      this.grid[b.r][b.c] = cPat;
-      this.grid[c.r][c.c] = bPat;
-      const newAdj = this._adjacencySamePairs();
-      if (newAdj >= 1 && newAdj < cur) {
-        cur = newAdj;            // 接受：更分散且仍留至少一对可点
-      } else {
-        this.grid[b.r][b.c] = bPat; // 撤销
-        this.grid[c.r][c.c] = cPat;
+  _adjacencyRange() {
+    return this.level >= 50 ? { min: 3, max: 5 } : { min: 3, max: 8 };
+  }
+
+  _adjacencyStats() {
+    const degree = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    let adj = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const value = this.grid[r][c];
+      if (!value) continue;
+      if (c + 1 < COLS && this.grid[r][c + 1] === value) {
+        adj++; degree[r][c]++; degree[r][c + 1]++;
+      }
+      if (r + 1 < ROWS && this.grid[r + 1][c] === value) {
+        adj++; degree[r][c]++; degree[r + 1][c]++;
       }
     }
-  }
-
-  // 随机取一对横/竖相邻的同图案格。
-  _randomAdjacentSamePair() {
-    const pairs = [];
-    for (let r = 0; r < ROWS; r++)
-      for (let c = 0; c < COLS; c++) {
-        const v = this.grid[r][c];
-        if (!v) continue;
-        if (c + 1 < COLS && this.grid[r][c + 1] === v) pairs.push([{ r, c }, { r, c: c + 1 }]);
-        if (r + 1 < ROWS && this.grid[r + 1][c] === v) pairs.push([{ r, c }, { r: r + 1, c }]);
-      }
-    if (!pairs.length) return null;
-    return pairs[Math.floor(Math.random() * pairs.length)];
-  }
-
-  // 随机取一个图案不同于 pat 的格子（用于交换去聚堆）。
-  _randomCellWithPatternNot(pat) {
-    const cand = [];
-    for (let r = 0; r < ROWS; r++)
-      for (let c = 0; c < COLS; c++)
-        if (this.grid[r][c] !== null && this.grid[r][c] !== pat) cand.push({ r, c });
-    if (!cand.length) return null;
-    return cand[Math.floor(Math.random() * cand.length)];
-  }
-
-  // 横/竖相邻且图案相同的格子对数（衡量聚簇程度）。
-  _adjacencySamePairs() {
-    let n = 0;
-    for (let r = 0; r < ROWS; r++)
-      for (let c = 0; c < COLS; c++) {
-        const v = this.grid[r][c];
-        if (!v) continue;
-        if (c + 1 < COLS && this.grid[r][c + 1] === v) n++;
-        if (r + 1 < ROWS && this.grid[r + 1][c] === v) n++;
-      }
-    return n;
-  }
-
-  // 兜底：若随机布局完全没有相邻同图案，把同图案的两块移到相邻，保证有解。
-  _ensureOneAdjacency() {
-    const byPattern = new Map();
-    for (const b of this.blocks) {
-      if (!byPattern.has(b.pattern)) byPattern.set(b.pattern, []);
-      byPattern.get(b.pattern).push(b);
+    let chain = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (degree[r][c] > 1) chain += degree[r][c] - 1;
+      const value = this.grid[r][c];
+      if (value && c + 2 < COLS && this.grid[r][c + 1] === value && this.grid[r][c + 2] === value) chain++;
+      if (value && r + 2 < ROWS && this.grid[r + 1][c] === value && this.grid[r + 2][c] === value) chain++;
     }
-    for (const [, list] of byPattern) {
-      if (list.length < 2) continue;
-      const a = list[0], b = list[1];
-      const nr = a.r, nc = a.c + 1 < COLS ? a.c + 1 : a.c - 1;
-      const x = this.blocks.find(bl => bl.r === nr && bl.c === nc);
-      if (!x) continue;
-      this.grid[a.r][a.c] = a.pattern;   // a 不动
-      this.grid[nr][nc] = b.pattern;     // b 移到 a 的相邻格
-      this.grid[b.r][b.c] = x.pattern;   // 原相邻格的块 x 移到 b 原位
-      x.r = b.r; x.c = b.c;
-      b.r = nr; b.c = nc;
-      return;
+    return { adj, chain };
+  }
+
+  _clickClearProgress() {
+    const grid = this.grid.map(row => row.slice());
+    const firstMatch = (r, c) => {
+      const pattern = grid[r][c];
+      if (!pattern) return null;
+      for (const dir of Object.values(GameCore.DIRS)) {
+        let nr = r + dir.dr, nc = c + dir.dc;
+        while (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+          if (grid[nr][nc]) {
+            if (grid[nr][nc] === pattern) return { r: nr, c: nc };
+            break;
+          }
+          nr += dir.dr;
+          nc += dir.dc;
+        }
+      }
+      return null;
+    };
+
+    let cleared = 0;
+    while (true) {
+      const moves = [];
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (!grid[r][c]) continue;
+        const hit = firstMatch(r, c);
+        if (hit) moves.push({ r, c, hit });
+      }
+      if (!moves.length) return cleared;
+      let bestMove = moves[0];
+      let bestNext = -1;
+      for (const move of moves) {
+        const a = grid[move.r][move.c], b = grid[move.hit.r][move.hit.c];
+        grid[move.r][move.c] = 0;
+        grid[move.hit.r][move.hit.c] = 0;
+        let next = 0;
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+          if (!grid[r][c]) continue;
+          if (firstMatch(r, c)) next++;
+        }
+        grid[move.r][move.c] = a;
+        grid[move.hit.r][move.hit.c] = b;
+        if (next > bestNext) { bestNext = next; bestMove = move; }
+      }
+      grid[bestMove.r][bestMove.c] = 0;
+      grid[bestMove.hit.r][bestMove.hit.c] = 0;
+      cleared++;
     }
   }
 
@@ -309,16 +307,22 @@ class GameCore {
     }
     let dist = 0;
     let cr = front.r + d.dr, cc = front.c + d.dc;
-    while (this.inBounds(cr, cc) && this.grid[cr][cc] === 0) {
+    // 只在本关活动区域内滑行：区域外虽是空格，但那是可见棋盘之外，不可推入
+    while (this._inPlayBounds(cr, cc) && this.grid[cr][cc] === 0) {
       dist++;
       cr += d.dr;
       cc += d.dc;
     }
     if (!this._probing) {
       dbg({ type: 'maxSlideDistance', dir, front: { r: front.r, c: front.c, p: front.pattern }, dist,
-            stop: this.inBounds(cr, cc) ? { r: cr, c: cc, p: this.grid[cr][cc] } : 'boundary' });
+            stop: this._inPlayBounds(cr, cc) ? { r: cr, c: cc, p: this.grid[cr][cc] } : 'boundary' });
     }
     return dist;
+  }
+
+  // 本关活动区域边界：前两关棋盘不满格时，方块不能滑出可见棋盘范围
+  _inPlayBounds(r, c) {
+    return r >= this.r0 && r < this.r0 + this.rows && c >= this.c0 && c < this.c0 + this.cols;
   }
 
   inBounds(r, c) { return r >= 0 && r < ROWS && c >= 0 && c < COLS; }
@@ -553,8 +557,9 @@ class GameCore {
     for (let attempt = 0; attempt < 10; attempt++) {
       this._clearAll();
       const cells = [];
-      for (let r = 0; r < ROWS; r++)
-        for (let c = 0; c < COLS; c++)
+      // 只在本关活动区域内洗牌：区域外是可见棋盘之外，不可放置方块
+      for (let r = this.r0; r < this.r0 + this.rows; r++)
+        for (let c = this.c0; c < this.c0 + this.cols; c++)
           cells.push([r, c]);
       this._shuffleArray(cells);
       for (let i = 0; i < remaining.length; i++) {
@@ -669,7 +674,7 @@ const selfTests = {
     checks.push(c.getCols() === 9 && c.getRows() === 6);
     checks.push(c.getTotalBlocks() === 54 && c.getPatternCount() === 54);
     const pids = activePatternIds(1);
-    checks.push(pids.length === 6);
+    checks.push(pids.length === 14); // L1：6x9=54 格，带状下限 ⌈54/4⌉=14 种
     const counts = {};
     for (const b of c.getBlocks()) counts[b.pattern] = (counts[b.pattern] || 0) + 1;
     checks.push(pids.every(p => counts[p] % 2 === 0 && counts[p] > 0));
@@ -1006,6 +1011,11 @@ function coreWith(entries) {
   c.blocks = [];
   c.clearedPairs = 0;
   c.nextId = 1;
+  // 自定义盘面横跨整个网格：显式声明为满盘区域，滑动边界与旧整盘语义一致
+  c.rows = ROWS;
+  c.cols = COLS;
+  c.r0 = 0;
+  c.c0 = 0;
   for (const [r, cc, p] of entries) {
     c.grid[r][cc] = p;
     c.blocks.push({ id: c.nextId++, pattern: p, r, c: cc });
@@ -1032,6 +1042,6 @@ function runSelfTest(which = "all") {
 module.exports = {
   GameCore, selfTests, runSelfTest, coreWith,
   ROWS, COLS, TOTAL_BLOCKS, TOTAL_PAIRS,
-  BASE_PATTERNS, MAX_PATTERNS, PATTERN_FIXED_LEVEL, LAYOUT_FIXED_LEVEL,
-  patternCountForLevel, countsForLevel, targetAdjacencyForLevel,
+  MAX_PATTERNS, PATTERN_FIXED_LEVEL, LAYOUT_FIXED_LEVEL,
+  countsForLevel, targetAdjacencyForLevel,
 };

@@ -35,7 +35,7 @@ G.__REDUCED_MOTION = false; // no OS API; keep full effects
 G.__createCanvas = () => wx.createCanvas();
 
 // Capture uncaught runtime errors (e.g. inside the frame loop) to storage so
-// they can be diagnosed without watching the console.
+// they can be diagnosed without watching the console.bb
 try {
   wx.onError((err) => {
     const msg = (err && err.message) ? err.message : String(err);

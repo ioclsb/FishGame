@@ -3,7 +3,7 @@
 // through the same drag/tap state machine as the web version.
 
 const { G: GLOBAL } = require('./globals.js');
-const { GameCore } = require('./core.js');
+const { GameCore, MAX_PATTERNS } = require('./core.js');
 const { RenderView, G, cellCenterInBoard } = require('./view.js');
 const { UI } = require('./ui.js');
 const { SoundManager } = require('./sound.js');
@@ -11,9 +11,8 @@ const storage = require('./storage.js');
 require('./debug.js');
 
 const DEBUG = GLOBAL.__DEBUG_ENABLED === true;
-// 开发跳关：设为目标关（如 36）启动即直跳该关；用毕改回 0 恢复常规进度。
+// 开发跳关：设为目标关（如 36）启动即直跳该关；0 为常规（按存档进度，首启即第 1 关）。
 const JUMP_TO_LEVEL = 0;
-const PATTERN_NAMES = ['小丑鱼', '蓝倒吊', '绿海龟', '河豚', '紫水母', '小红蟹'];
 // 顶部设置按钮与安全区之间的留白
 const TOP_PAD = 12;
 // 左上角设置按钮半径
@@ -74,6 +73,7 @@ class App {
       coachHint: null,
       win: null,
       settings: false,
+      dev: null, // DEV-JUMP（临时）：null 关闭；{ sel } 打开并记录目标关
       level: this._loadLevel(),
       usedOnce: { undo: false, shuffle: false, hint: false },
     };
@@ -87,11 +87,11 @@ class App {
       hudH: this.hudH,
       progTop: this.progTop,
       board: this.boardRect,
+      fullBoard: this.fullBoardRect,
     });
 
     this._wireView(this.view);
     this.updateHud();
-    this._maybeCoach();
     // 高刷设备解锁 120fps（60Hz 屏 / 不支持的基础库自动回落，无副作用）
     try {
       if (typeof wx !== 'undefined' && wx.setPreferredFramesPerSecond) {
@@ -156,6 +156,10 @@ class App {
     const ox = Math.round((wrapW - bw) / 2);
     const oy = Math.round(this.progTop + (avail - bh) / 2);
     this.boardRect = { x: ox + BOARD_PAD, y: oy + BOARD_PAD, w: bw - BOARD_PAD * 2, h: bh - BOARD_PAD * 2 };
+    // 满盘基准矩形：进度条/关卡徽章/按钮行按满盘位置锚定，不随前两关的小棋盘移动
+    const fx = Math.round((wrapW - G.fullW) / 2);
+    const fy = Math.round(this.progTop + (avail - G.fullH) / 2);
+    this.fullBoardRect = { x: fx + BOARD_PAD, y: fy + BOARD_PAD, w: G.fullW - BOARD_PAD * 2, h: G.fullH - BOARD_PAD * 2 };
     if (this.ui) {
       this.ui.setLayout({
         width: this.width,
@@ -166,6 +170,7 @@ class App {
         hudH: this.hudH,
         progTop: this.progTop,
         board: this.boardRect,
+        fullBoard: this.fullBoardRect,
       });
     }
   }
@@ -256,8 +261,8 @@ class App {
     if (streak >= 2) {
       let mx = 0, my = 0;
       for (const c of cells) { mx += c.c; my += c.r; }
-      const px = (mx / cells.length) * G.pitch + G.cell / 2;
-      const py = (my / cells.length) * G.pitch - G.cell * 0.15;
+      const px = ((mx / cells.length) - G.originC) * G.pitch + G.cell / 2;
+      const py = ((my / cells.length) - G.originR) * G.pitch - G.cell * 0.15;
       v.schedule(110, () => v.spawnFloater(px, py, `连击 ×${streak}`, Math.min(streak - 1, 4)));
     }
   }
@@ -282,6 +287,8 @@ class App {
   winVisible() { return !!this.uiState.win; }
   coachVisible() { return !!this.uiState.coach; }
   settingsVisible() { return !!this.uiState.settings; }
+  // DEV-JUMP（临时）
+  devVisible() { return !!this.uiState.dev; }
 
   updateHud() {
     const c = this.core.getClearedPairs();
@@ -335,15 +342,17 @@ class App {
       if (h) {
         this.view.hint = h;
         this.view.render();
-        const hinted = this.core.getBlocks().find((b) => b.id === h.blockId);
-        const species = hinted ? PATTERN_NAMES[hinted.pattern - 1] : '';
         const verb = h.dir === null ? '点击' : '推动';
-        this.setMsg(species ? `提示：${verb}${species}即可消除` : `提示：${verb}该方块即可消除`);
+        this.setMsg(`提示：${verb}此方块即可消除`);
       } else {
         this.view.hint = null;
         this.view.render();
         this.setMsg('当前无解，可尝试洗牌');
       }
+    } else if (id === 'restart') {
+      if (this.busy) return;
+      this.sound.ui();
+      this.restart();
     } else if (id === 'settings') {
       this.sound.ui();
       this.uiState.settings = true;
@@ -372,18 +381,7 @@ class App {
   }
 
   _maybeCoach() {
-    let coached = false;
-    try { coached = storage.get('psm.coached') === '1'; } catch (e) {}
-    if (coached) return;
-    // 首启：进入互动教学关（小棋盘 + 引导），用 psm.coached 标记是否完成教学。
-    // 教学关可交互、不暂停、不弹阻断式弹窗——玩家直接在引导下一步步玩。
-    this.uiState.tutorial = true;
-    this.core.loadTutorial();
-    this.view = new RenderView(this.boardCanvas, this.core, this.platform);
-    this._wireView(this.view);
-    RenderView.setPaused(false);
-    this.uiState.coachHint = this.core.findHint();
-    this.setMsg('把相同的两条鱼滑到一起，就能消除', 6000);
+    // 引导关已移除：直接进入第 1 关（_loadLevel 对全新玩家返回 1）。
   }
 
   // 跳过/完成教学：标记已教学，重置进度到第 1 关并进入正常游戏
@@ -448,6 +446,14 @@ class App {
         else if (hit.id === 'settingsVibrate') this._toggleVibrate();
         else if (hit.id === 'settingsMusic') this._toggleMusic();
         else if (hit.id === 'tutorialSkip') this._finishTutorial();
+        // DEV-JUMP（临时）：跳关面板交互
+        else if (hit.id === 'devClose') { this.sound.ui(); this.uiState.dev = null; }
+        else if (hit.id === 'devM10') this._devAdjust(-10);
+        else if (hit.id === 'devM1') this._devAdjust(-1);
+        else if (hit.id === 'devP1') this._devAdjust(1);
+        else if (hit.id === 'devP10') this._devAdjust(10);
+        else if (hit.id.indexOf('devPreset') === 0) this._devSet(parseInt(hit.id.slice(9), 10) || 1);
+        else if (hit.id === 'devGo') { this.ui.pressId = 'devGo'; this.sound.ui(); }
         else if (hit.id === 'settingsRestart' || hit.id === 'settingsClose') {
           this.ui.pressId = hit.id;
           this.sound.ui();
@@ -539,6 +545,9 @@ class App {
       } else if (id === 'settingsClose') {
         this.uiState.settings = false;
         this.view.render();
+      } else if (id === 'devGo') { // DEV-JUMP（临时）：松手确认跳转
+        const sel = this.uiState.dev ? this.uiState.dev.sel : this.uiState.level;
+        this.jumpToLevel(sel);
       }
       return;
     }
@@ -636,8 +645,8 @@ class App {
     this.uiState.level = Math.max(1, (this.uiState.level || 1) + 1);
     try { storage.set('psm.level', String(this.uiState.level)); } catch (e) {}
     // 结算界面仅保留“恭喜通关”与“再来一局”，不再展示用时/消除/提示/最佳统计
-    // 每局随机抽一个手绘图案作为通关纪念（1..31 为手绘贴图）
-    this.uiState.win = { pattern: 1 + Math.floor(Math.random() * 31) };
+    // 每局随机抽一张手绘贴图作为通关纪念（1..MAX_PATTERNS 均为手绘）
+    this.uiState.win = { pattern: 1 + Math.floor(Math.random() * MAX_PATTERNS) };
     this.sound.win();
     this.vibrate([16, 40, 16, 40, 60]);
     this.ui.spawnConfetti();
@@ -684,11 +693,52 @@ class App {
     this.core.init(this.uiState.level);
     this.view = new RenderView(this.boardCanvas, this.core, this.platform);
     this._wireView(this.view);
+    this._setBoardRect();
+    if (this.sound) this.sound.deal(); // 方块重新铺满的落位碰撞声
     this.uiState.stuck = false;
     this.uiState.usedOnce = { undo: false, shuffle: false, hint: false };
     this.setMsg('');
     this.updateHud();
   }
+
+  // ==== DEV-JUMP（临时）开发跳关：测试结束后整段删除 ====
+  _devAdjust(d) {
+    if (!this.uiState.dev) return;
+    this.uiState.dev.sel = Math.max(1, Math.min(999, (this.uiState.dev.sel || 1) + d));
+    this.sound.ui();
+  }
+
+  _devSet(n) {
+    if (!this.uiState.dev) return;
+    this.uiState.dev.sel = Math.max(1, Math.min(999, n | 0));
+    this.sound.ui();
+  }
+
+  // 跳转到任意关开始游戏（重建棋盘、清空本局状态、进度条随关卡刷新）
+  jumpToLevel(n) {
+    const lv = Math.max(1, Math.min(999, n | 0));
+    this.uiState.win = null;
+    this.uiState.dev = null;
+    RenderView.setPaused(false);
+    if (this.view) this.view._bumpToken();
+    this.busy = false;
+    this.press = null;
+    this.picking = null;
+    this.streak = 0;
+    this.stats = this._freshStats();
+    this.uiState.level = lv;
+    try { storage.set('psm.level', String(lv)); } catch (e) {}
+    this.core.init(lv);
+    this.view = new RenderView(this.boardCanvas, this.core, this.platform);
+    this._wireView(this.view);
+    this._setBoardRect();
+    this.uiState.stuck = false;
+    this.uiState.usedOnce = { undo: false, shuffle: false, hint: false };
+    if (this.sound) this.sound.deal(); // 方块重新铺满的落位碰撞声
+    this.setMsg('已跳转到第 ' + lv + ' 关', 2000);
+    this.updateHud();
+  }
+  // ==== DEV-JUMP-END ====
 
 }
 

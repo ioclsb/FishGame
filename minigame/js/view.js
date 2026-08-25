@@ -21,7 +21,7 @@ function createCanvas() {
 }
 
 // ================= GEOMETRY =================
-const G = { cell: 64, gap: 4, pitch: 68, boardW: 640, boardH: 640, dpr: 1 };
+const G = { cell: 64, gap: 4, pitch: 68, boardW: 640, boardH: 640, dpr: 1, originR: 0, originC: 0 };
 const DPR_CAP = 2;
 const CELL_MAX = 150;
 
@@ -52,19 +52,27 @@ function _loadPatternImages() {
   }
 }
 
-function computeLayout(availW, availH) {
+function computeLayout(availW, availH, rows, cols) {
   const w = Math.max(160, availW);
   const h = Math.max(160, availH);
-  // 缩小格间空隙（约 3px，对齐参考图的紧凑拼盘感），让方块更大、图案更清晰
   const gap = 0; // 方块之间无缝隙
+  // 以“满盘 9x12”为基准算格子尺寸：第 3 关起即为正常尺寸，前两关只是更少行数的小棋盘
   const cellW = Math.floor((w - gap * (COLS - 1)) / COLS);
   const cellH = Math.floor((h - gap * (ROWS - 1)) / ROWS);
   const cell = Math.max(10, Math.min(cellW, cellH, CELL_MAX));
   G.gap = gap;
   G.cell = cell;
   G.pitch = cell + gap;
-  G.boardW = cell * COLS + gap * (COLS - 1);
-  G.boardH = cell * ROWS + gap * (ROWS - 1);
+  const r = rows != null ? rows : ROWS;
+  const c = cols != null ? cols : COLS;
+  G.boardW = cell * c + gap * (c - 1);
+  G.boardH = cell * r + gap * (r - 1);
+  // 满盘（9x12）基准尺寸：HUD 锚定用，不随本关棋盘行数变化
+  G.fullW = cell * COLS + gap * (COLS - 1);
+  G.fullH = cell * ROWS + gap * (ROWS - 1);
+  // 实际棋盘在 9x12 网格中的居中偏移（core 用同样公式放置方块），绘制时减掉它
+  G.originR = Math.floor((ROWS - r) / 2);
+  G.originC = Math.floor((COLS - c) / 2);
 }
 
 // ================= ART: OCEAN THEME =================
@@ -298,6 +306,8 @@ class RenderView {
   }
 
   isBusyFrame() {
+    // 入场动画窗口内（8 列错峰 320ms + 单块 400ms ≈ 720ms）保持全帧率渲染
+    if (performance.now() - this.spawnT0 < 800) return true;
     return !!(this.drag || this.revert || this.pick || this.bounce ||
               this.hint || this.elimFlash ||
               this.particles.length > 0 || this.rings.length > 0 ||
@@ -372,8 +382,8 @@ class RenderView {
       const d = GameCore.DIRS[dir];
       const off = this.drag.offsetPx;
       for (const m of this.drag.group) {
-        const cx = m.c * G.pitch + G.cell / 2 + d.dc * off;
-        const cy = m.r * G.pitch + G.cell / 2 + d.dr * off;
+        const cx = (m.c - G.originC) * G.pitch + G.cell / 2 + d.dc * off;
+        const cy = (m.r - G.originR) * G.pitch + G.cell / 2 + d.dr * off;
         // 沿运动反方向拉开距离，再向两侧散开，形成一条身后流动的小泡泡带
         const back = 0.3 + Math.random() * 0.9;
         const side = (Math.random() - 0.5) * G.cell * 1.1;
@@ -473,7 +483,9 @@ class RenderView {
   }
 
   resize() {
-    computeLayout(this.platform.wrapW, this.platform.wrapH);
+    const rows = this.core ? this.core.getRows() : ROWS;
+    const cols = this.core ? this.core.getCols() : COLS;
+    computeLayout(this.platform.wrapW, this.platform.wrapH, rows, cols);
     const dpr = Math.min(this.platform.dpr || 1, DPR_CAP);
     const bw = Math.round(G.boardW * dpr);
     const bh = Math.round(G.boardH * dpr);
@@ -504,12 +516,12 @@ class RenderView {
   }
 
   gridToPixel(r, c) {
-    return { x: c * G.pitch, y: r * G.pitch };
+    return { x: (c - G.originC) * G.pitch, y: (r - G.originR) * G.pitch };
   }
 
   pixelToGrid(x, y) {
-    const c = Math.floor(x / G.pitch);
-    const r = Math.floor(y / G.pitch);
+    const c = Math.floor(x / G.pitch) + G.originC;
+    const r = Math.floor(y / G.pitch) + G.originR;
     return { r, c };
   }
 
@@ -556,7 +568,7 @@ class RenderView {
       const px = d.dc * offsetPx;
       const py = d.dr * offsetPx;
       for (const m of active.group) {
-        moving.set(m.id, { x: m.c * G.pitch + px, y: m.r * G.pitch + py });
+        moving.set(m.id, { x: (m.c - G.originC) * G.pitch + px, y: (m.r - G.originR) * G.pitch + py });
       }
       if (this.drag) {
         const a = active.group[0];
@@ -564,8 +576,8 @@ class RenderView {
         const dragDir = this.drag.dir;
         const d = GameCore.DIRS[dragDir];
         const offsetPx = this.drag.offsetPx;
-        const cx = a.c * cellPx + G.cell / 2 + d.dc * offsetPx;
-        const cy = a.r * cellPx + G.cell / 2 + d.dr * offsetPx;
+        const cx = (a.c - G.originC) * cellPx + G.cell / 2 + d.dc * offsetPx;
+        const cy = (a.r - G.originR) * cellPx + G.cell / 2 + d.dr * offsetPx;
         const curR = Math.floor(cy / cellPx);
         const curC = Math.floor(cx / cellPx);
         ctx.fillStyle = 'rgba(255,255,255,0.28)';
@@ -624,8 +636,8 @@ class RenderView {
     for (let idx = 0; idx < blocks.length; idx++) {
       const block = blocks[idx];
       const pos = moving.get(block.id);
-      const x = pos ? pos.x : block.c * G.pitch;
-      const y = pos ? pos.y : block.r * G.pitch;
+      const x = pos ? pos.x : (block.c - G.originC) * G.pitch;
+      const y = pos ? pos.y : (block.r - G.originR) * G.pitch;
       let scale = 1;
       let rot = 0;
       if (pulsePattern !== null && block.pattern === pulsePattern) rot = pulseAngle;
@@ -636,9 +648,19 @@ class RenderView {
         else scale *= 1 + 0.05 * Math.sin(st * Math.PI);
       }
       if (!REDUCED_MOTION) {
-        const lt = (now - this.spawnT0 - Math.min(idx * 9, 420)) / 240;
-        if (lt < 0) scale *= 0.0001;
-        else if (lt < 1) scale *= lt; // 线性展开入场（从 0 等比放大到 1）
+        // 入场：上下两半相向入场——上半部分从左往右、下半部分从右往左同时推进，
+        // 每块仍用 easeOutBack 弹入（0→过冲→回正）；整体节奏放缓
+        const nCols = this.core.getCols();
+        const halfRow = Math.floor(this.core.getRows() / 2);
+        const fromLeft = block.r < halfRow;
+        const p = now - this.spawnT0 - (fromLeft ? block.c : nCols - 1 - block.c) * 40;
+        const POP = 400;
+        if (p < 0) continue; // 未轮到：先隐藏
+        if (p < POP) {
+          const t = p / POP;
+          const c1 = 1.70158, c3 = c1 + 1;
+          scale *= Math.max(0, 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2));
+        }
       }
       this.drawBlock(block, x, y, scale, rot);
     }
@@ -668,11 +690,8 @@ class RenderView {
         ti++;
         const p = this.gridToPixel(t.r, t.c);
         const ts = 1 + (REDUCED_MOTION ? 0 : 0.06 * Math.sin(now * 0.008 + ti * 0.9));
-        ctx.save();
-        ctx.shadowColor = 'rgba(255,255,255,0.9)';
-        ctx.shadowBlur = 14;
+        // 高亮只作用于方块本身：不再加白色外发光（旧效果会在方块四周/下方晕出光斑）
         this.drawBlock(this.core.getBlocks().find(b => b.r === t.r && b.c === t.c) || { pattern: this.core.getGrid()[t.r][t.c], r: t.r, c: t.c }, p.x, p.y, ts);
-        ctx.restore();
       }
     }
     for (const g of this.rings) {
@@ -757,16 +776,17 @@ class RenderView {
     }
   }
 
-  drawBlock(block, x, y, scale = 1, rot = 0) {
+  drawBlock(block, x, y, scale = 1, rot = 0, sq = 1) {
     const img = RenderView.spriteFor(block.pattern);
-    if (scale === 1 && !rot) {
+    if (scale === 1 && sq === 1 && !rot) {
       this.ctx.drawImage(img, x, y, G.cell, G.cell);
       return;
     }
     const cx = x + G.cell / 2, cy = y + G.cell / 2;
-    const w = G.cell * scale, h = G.cell * scale;
+    const w = G.cell * scale, h = G.cell * scale * sq;
     this.ctx.save();
-    this.ctx.translate(cx, cy);
+    // sq<1（落地压扁）时保持底边贴地：中心向下偏移压缩量的一半
+    this.ctx.translate(cx, cy + (h - w) / 2);
     if (rot) this.ctx.rotate(rot);
     this.ctx.drawImage(img, -w / 2, -h / 2, w, h);
     this.ctx.restore();
@@ -798,8 +818,8 @@ class RenderView {
 
   matchBurst(r, c, pattern, power = 1, delayMs = 0) {
     if (REDUCED_MOTION) return;
-    const cx = c * G.pitch + G.cell / 2;
-    const cy = r * G.pitch + G.cell / 2;
+    const cx = (c - G.originC) * G.pitch + G.cell / 2;
+    const cy = (r - G.originR) * G.pitch + G.cell / 2;
     this.rings.push({ x: cx, y: cy, t: -delayMs / 1000, dur: 0.38, maxR: G.cell * (0.85 + 0.15 * Math.min(power, 3)), color: PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length] });
     this.schedule(delayMs, () => {
       const base = PATTERN_COLORS[(pattern - 1) % PATTERN_COLORS.length];
@@ -842,7 +862,7 @@ class RenderView {
   }
 
   playElimination(cellA, cellB, pattern, onDone) {
-    const ax = cellA.c * G.pitch, ay = cellA.r * G.pitch;
+    const ax = (cellA.c - G.originC) * G.pitch, ay = (cellA.r - G.originR) * G.pitch;
     const tp = this.gridToPixel(cellB.r, cellB.c);
     this.elimFlash = {
       t0: performance.now(),
@@ -869,7 +889,7 @@ class RenderView {
       const from = this.drag.offsetPx;
       this.drag = null;
       this.revert = { group, dir, offsetPx: from, fromPx: from };
-      this._animate(from, 0, 220, (v) => {
+      this._animate(from, 0, 100, (v) => {
         this.revert.offsetPx = v;
         this.render();
       }, () => {
@@ -924,7 +944,7 @@ class RenderView {
       } else {
         if (this.onRevert) this.onRevert();
         this.revert = { group, dir, offsetPx: to, fromPx: to };
-        this._animate(to, 0, 220, (v) => {
+        this._animate(to, 0, 100, (v) => {
           this.revert.offsetPx = v;
           this.render();
         }, () => {
@@ -979,7 +999,7 @@ RenderView._paused = false;
 
 // 单元格中心（在棋盘画布坐标系内），供 UI 引导层精确定位高亮/箭头
 function cellCenterInBoard(r, c) {
-  return { x: c * G.pitch + G.cell / 2, y: r * G.pitch + G.cell / 2 };
+  return { x: (c - G.originC) * G.pitch + G.cell / 2, y: (r - G.originR) * G.pitch + G.cell / 2 };
 }
 
 module.exports = { RenderView, G, computeLayout, PATTERN_COLORS, roundRectPath, createCanvas, cellCenterInBoard };
