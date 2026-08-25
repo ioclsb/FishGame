@@ -7,23 +7,23 @@ const { G } = require('./globals.js');
 
 const DEBUG = G.__DEBUG_ENABLED === true;
 
-const COLS = 10, ROWS = 14;      // 竖屏 10x14 布局
-const TOTAL_BLOCKS = COLS * ROWS; // 棋盘铺满 = 140 块
-const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 70 对
+const COLS = 9, ROWS = 12;      // 竖屏 9x12 布局（117 为奇数无法配对，取偶数 108）
+const TOTAL_BLOCKS = COLS * ROWS; // 棋盘铺满 = 108 块
+const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 54 对
 
-// 关卡难度曲线：图案数随关卡“前快后平”地增长，到 300 关引入完毕（每种恰好 2 块），
-// 之后不再新增图案；300→500 关仅靠“排布难度”（去聚堆）继续爬升，500 后封顶、关卡无限。
-// 前期（每图案约 5 对）比“一眼成片”难，但仍温和。
-const BASE_PATTERNS = 14;        // 第 1 关图案数（每图案 10 块 = 5 对）
-const MAX_PATTERNS = 70;         // 最终图案数（每种恰好 2 块 = 1 对，铺满 70 对）
-const PATTERN_FIXED_LEVEL = 380; // 图案数在约第 350 关引入完毕（顶配 70），之后不再新增；曲线比 300 更平缓
-const LAYOUT_FIXED_LEVEL = 500;  // 仅排布难度继续爬升到 500 关后封顶
+// 难度（图案种数）排程：L1–L2 体验略简单（棋盘不满格、图案少，好认）；L3 起棋盘满格（9x12），
+// 图案数从 L3 的约 13 种循序渐进地递增，约第 250 关铺满 MAX_PATTERNS（54 种，每种恰好 2 块），
+// 之后不再新增；到 LAYOUT_FIXED_LEVEL 仅靠“排布难度”（去聚堆）继续爬升，之后封顶、关卡无限。
+const BASE_PATTERNS = 6;        // 第 1 关图案数（体验，好认）
+const MAX_PATTERNS = 54;        // 最终/最大图案数（9x12 满盘 108 块 → 每图案至少 2 块 → 硬上限 54）
+const PATTERN_FIXED_LEVEL = 250;// 图案数约第 250 关引入完毕（铺满 54），之后不再新增；曲线前快后平
+const LAYOUT_FIXED_LEVEL = 500; // 仅排布难度继续爬升到 500 关后封顶
 
 // 预览用：设为非空数组时，棋盘只铺这些图案（真实编号），其余暂不登场。
-// 设为 null 即恢复按关卡难度曲线引入全部 70 种。后台绘制/配色数据均保留不动。
-// 恢复正常游戏：按关卡难度曲线引入全部 70 种（第1关14种，第272关满70种）。
+// 设为 null 即恢复按关卡难度排程引入全部 54 种。后台绘制/配色数据均保留不动。
+// 恢复正常游戏：按关卡难度排程引入全部 54 种（第1关 6 种，第 10 关满 54 种）。
 // 已画好的手绘贴图 1–31 放 assets/patterns/NN.png，引擎优先用手绘；
-// 32–70 暂无手绘图，自动走程序化生物（drawCreature）兜底，画好后补图即替换。
+// 32–54 暂无手绘图，自动走程序化生物（drawCreature）兜底，画好后补图即替换（55–70 暂不使用）。
 const RETAINED_PATTERNS = null;
 function activePatternIds(level) {
   if (RETAINED_PATTERNS && RETAINED_PATTERNS.length) return RETAINED_PATTERNS.slice();
@@ -31,43 +31,37 @@ function activePatternIds(level) {
   return Array.from({ length: P }, (_, i) => i + 1);
 }
 
-// ease-out 曲线：t∈[0,1]，(1-(1-t)²) 在前期上升快、后期趋平。
+// 每关启用图案种数：L1–L2 体验温和；L3 起满盘并沿 ease-out 曲线循序渐进增到 MAX_PATTERNS。
 function patternCountForLevel(level) {
   const L = Math.max(1, level | 0);
-  const t = Math.min(1, Math.max(0, (L - 1) / (PATTERN_FIXED_LEVEL - 1)));
+  if (L <= 2) return [BASE_PATTERNS, 9][L - 1] || 9; // L1=6, L2=9
+  const t = Math.min(1, Math.max(0, (L - 3) / (PATTERN_FIXED_LEVEL - 3)));
   const eased = 1 - (1 - t) * (1 - t);
-  const P = Math.round(BASE_PATTERNS + (MAX_PATTERNS - BASE_PATTERNS) * eased);
-  return Math.min(MAX_PATTERNS, Math.max(BASE_PATTERNS, P));
+  const P = Math.round(13 + (MAX_PATTERNS - 13) * eased); // L3≈13 → 满级 54
+  return Math.min(MAX_PATTERNS, Math.max(13, P));
 }
 
-// 前期“体验版”棋盘：只填充棋盘中央一小块区域（四周留空），关卡越低区域越小；
-// 既降低难度，又不改棋盘几何/滑动物理（引擎本就支持空格，消除后棋盘亦然）。
+// 前期“体验版”棋盘：L1–L2 不满格（仅高度递减），但用满 9 列宽避免“空一格”；L3 起满格 9x12。
 function boardDimsForLevel(level) {
   if (level <= 0) return { rows: 4, cols: 4 }; // 教学关
-  if (level >= 6) return { rows: ROWS, cols: COLS };
+  if (level >= 3) return { rows: ROWS, cols: COLS }; // 第 3 关起满格 9x12
   const table = {
-    1: { rows: 5, cols: 6 },
-    2: { rows: 6, cols: 8 },
-    3: { rows: 7, cols: 10 },
-    4: { rows: 9, cols: 10 },
-    5: { rows: 11, cols: 10 },
+    1: { rows: 6, cols: 9 },
+    2: { rows: 8, cols: 9 },
   };
   return table[level] || { rows: ROWS, cols: COLS };
 }
 
-// 启用的图案数：前期更少（更好认），且不超过“每图案至少约 4 块”的容量上限
+// 启用的图案数：不超过“每图案至少 2 块”的容量上限（满盘 108 块 → 最多 54 种）。
 function regionPatternCount(level) {
   if (level <= 0) return 2; // 教学关只用 2 种
-  const early = { 1: 5, 2: 7, 3: 9, 4: 12, 5: 14 }[level];
-  if (early != null) {
-    const { rows, cols } = boardDimsForLevel(level);
-    const cap = Math.floor((rows * cols) / 4);
-    return Math.max(3, Math.min(early, cap));
-  }
-  return patternCountForLevel(level);
+  const P = patternCountForLevel(level);
+  const { rows, cols } = boardDimsForLevel(level);
+  const cap = Math.floor((rows * cols) / 2);
+  return Math.max(3, Math.min(P, cap));
 }
 
-// 把 140 块按偶数均衡分配给当前启用的图案集（和=140，每种均为偶数，可两两消完）。
+// 把 108 块按偶数均衡分配给当前启用的图案集（和=108，每种均为偶数，可两两消完）。
 function countsForLevel(level, totalBlocks) {
   const pids = activePatternIds(level);
   const P = pids.length;
@@ -86,7 +80,7 @@ function countsForLevel(level, totalBlocks) {
 // 生成时把相邻同图案对数压到该上限以下，即“去聚堆”，让同图案尽量分散。
 function targetAdjacencyForLevel(level) {
   const P = activePatternIds(level).length;
-  const adjTotal = COLS * (ROWS - 1) + (COLS - 1) * ROWS; // 棋盘全部相邻边数 = 256
+  const adjTotal = COLS * (ROWS - 1) + (COLS - 1) * ROWS; // 棋盘全部相邻边数（随 COLS/ROWS 自动：8x12 = 172）
   const randomExp = adjTotal / P;                         // 随机铺满的期望相邻同图案对数
   const t = Math.min(1, Math.max(0, (Math.max(1, level) - 1) / (LAYOUT_FIXED_LEVEL - 1)));
   const ratio = 0.9 - t * (0.9 - 0.33);                   // L1≈0.9（接近随机）… L300≈0.33
@@ -672,10 +666,10 @@ const selfTests = {
   experience() {
     const checks = [];
     const c = new GameCore(1);
-    checks.push(c.getCols() === 6 && c.getRows() === 5);
-    checks.push(c.getTotalBlocks() === 30 && c.getPatternCount() === 30);
+    checks.push(c.getCols() === 9 && c.getRows() === 6);
+    checks.push(c.getTotalBlocks() === 54 && c.getPatternCount() === 54);
     const pids = activePatternIds(1);
-    checks.push(pids.length === 5);
+    checks.push(pids.length === 6);
     const counts = {};
     for (const b of c.getBlocks()) counts[b.pattern] = (counts[b.pattern] || 0) + 1;
     checks.push(pids.every(p => counts[p] % 2 === 0 && counts[p] > 0));
@@ -683,7 +677,7 @@ const selfTests = {
     for (let r = 0; r < ROWS; r++)
       for (let col = 0; col < COLS; col++)
         if (c.getGrid()[r][col] === 0) empty++;
-    checks.push(empty === ROWS * COLS - 30);
+    checks.push(empty === ROWS * COLS - 54);
     checks.push(c.findHint() !== null);
     // 教学关
     const t = new GameCore(0);

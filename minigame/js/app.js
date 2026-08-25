@@ -636,7 +636,8 @@ class App {
     this.uiState.level = Math.max(1, (this.uiState.level || 1) + 1);
     try { storage.set('psm.level', String(this.uiState.level)); } catch (e) {}
     // 结算界面仅保留“恭喜通关”与“再来一局”，不再展示用时/消除/提示/最佳统计
-    this.uiState.win = {};
+    // 每局随机抽一个手绘图案作为通关纪念（1..31 为手绘贴图）
+    this.uiState.win = { pattern: 1 + Math.floor(Math.random() * 31) };
     this.sound.win();
     this.vibrate([16, 40, 16, 40, 60]);
     this.ui.spawnConfetti();

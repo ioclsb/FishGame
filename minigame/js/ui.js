@@ -39,6 +39,7 @@ class UI {
     this.settingsRestartBtn = null; // {x, y, w, h}
     this.tutorialSkipBtn = null; // {x, y, w, h} 教学关“跳过引导”
     this.pressId = null; // 底部按钮按压反馈：'settingsRestart' | 'settingsClose'
+    this._settingsShownAt = null; // 设置面板入场动画起始时间
     this.winPressId = null; // 结算“再来一局”按压反馈
     this.confetti = [];         // active confetti pieces
     this.fishX = 0;             // animated fish position along the bar
@@ -93,23 +94,26 @@ class UI {
   // Geometry for the settings panel options (deterministic so hit-testing
   // works even before the first render of the panel).
   _layoutSettings(W, H) {
-    const cardW = Math.min(W * 0.8, 320);
-    const cardH = 300;
+    const cardW = Math.min(W * 0.84, 340);
+    const cardH = 334;
     const c = { x: Math.round((W - cardW) / 2), y: Math.round((H - cardH) / 2), w: cardW, h: cardH };
-    const rowX = c.x + 20;
-    const rowW = cardW - 40;
-    const rowH = 40;
+    const rowX = c.x + 22;
+    const rowW = cardW - 44;
+    const rowH = 52;
+    const rowGap = 10;
+    const row0 = c.y + 80;
     this.settingsCard = c;
     this.settingsRows = {
-      music:   { x: rowX, y: c.y + 78, w: rowW, h: rowH },
-      sound:   { x: rowX, y: c.y + 126, w: rowW, h: rowH },
-      vibrate: { x: rowX, y: c.y + 174, w: rowW, h: rowH },
+      music:   { x: rowX, y: row0, w: rowW, h: rowH },
+      sound:   { x: rowX, y: row0 + (rowH + rowGap), w: rowW, h: rowH },
+      vibrate: { x: rowX, y: row0 + (rowH + rowGap) * 2, w: rowW, h: rowH },
     };
-    const bh = 42;
-    const gap = 12;
+    const bh = 46;
+    const gap = 14;
     const bw = Math.round((rowW - gap) / 2);
-    this.settingsRestartBtn = { x: c.x + 20, y: c.y + cardH - 46, w: bw, h: bh };
-    this.settingsCloseBtn = { x: c.x + 20 + bw + gap, y: c.y + cardH - 46, w: bw, h: bh };
+    const by = c.y + cardH - 62;
+    this.settingsRestartBtn = { x: rowX, y: by, w: bw, h: bh };
+    this.settingsCloseBtn = { x: rowX + bw + gap, y: by, w: bw, h: bh };
   }
 
   // ---- hit testing ------------------------------------------------------
@@ -216,6 +220,7 @@ class UI {
     if (this.app.coachVisible()) this._drawCoach(ctx);
     if (this.app.winVisible()) this._drawWin(ctx, now);
     if (this.app.settingsVisible()) this._drawSettings(ctx, now);
+    else this._settingsShownAt = null;
   }
 
   // 教学关引导层（非阻断：棋盘仍可正常操作）
@@ -578,32 +583,84 @@ class UI {
 
   _drawSettings(ctx, now) {
     const L = this.layout;
-    ctx.fillStyle = 'rgba(2,10,22,0.72)';
-    ctx.fillRect(0, 0, L.width, L.height);
-
     const c = this.settingsCard;
     if (!c) return;
+
+    // 入场动画：卡片轻微放大 + 背景淡入
+    if (this._settingsShownAt == null) this._settingsShownAt = now;
+    const tIn = Math.max(0, Math.min(1, (now - this._settingsShownAt) / 200));
+    const ease = 1 - Math.pow(1 - tIn, 3);
+    const cardScale = 0.94 + 0.06 * ease;
+    ctx.save();
+    ctx.globalAlpha = ease;
+    ctx.fillStyle = 'rgba(2,10,22,0.72)';
+    ctx.fillRect(0, 0, L.width, L.height);
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(c.x + c.w / 2, c.y + c.h / 2);
+    ctx.scale(cardScale, cardScale);
+    ctx.translate(-(c.x + c.w / 2), -(c.y + c.h / 2));
 
     ctx.save();
     ctx.shadowColor = 'rgba(0,5,15,0.6)';
     ctx.shadowBlur = 40;
     ctx.beginPath();
-    roundRectPath(ctx, c.x, c.y, c.w, c.h, 22);
+    roundRectPath(ctx, c.x, c.y, c.w, c.h, 24);
     const g = ctx.createLinearGradient(0, c.y, 0, c.y + c.h);
-    g.addColorStop(0, 'rgba(13,36,58,0.92)');
-    g.addColorStop(1, 'rgba(3,14,28,0.95)');
+    g.addColorStop(0, 'rgba(15,40,64,0.96)');
+    g.addColorStop(1, 'rgba(3,14,28,0.97)');
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(125,200,255,0.28)';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.restore();
 
+    // 顶部高光，营造与按钮一致的立体凸起感
+    ctx.save();
+    ctx.beginPath();
+    roundRectPath(ctx, c.x, c.y, c.w, c.h, 24);
+    ctx.clip();
+    const hg = ctx.createLinearGradient(0, c.y, 0, c.y + 46);
+    hg.addColorStop(0, 'rgba(255,255,255,0.18)');
+    hg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(c.x, c.y, c.w, 46);
+    ctx.restore();
+
+    // 表头：标题（淡蓝立体底板 + 两字拉开间距 + 立体文字）+ 分割线
+    const ty = c.y + 38;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(234,246,255,0.94)';
-    ctx.font = rf('700', 17);
-    ctx.fillText('设置', c.x + c.w / 2, c.y + 42);
+    ctx.font = rf('700', 19);
+    const chW = ctx.measureText('设').width;
+    const chGap = 8; // 两字间距
+    const cxTitle = c.x + c.w / 2;
+    const x1 = cxTitle - chW / 2 - chGap / 2;
+    const x2 = cxTitle + chW / 2 + chGap / 2;
+    // 通栏淡蓝底板：从卡片最顶铺到第一个开关行的上沿，左右铺满卡片两侧
+    // （开关蓝 rgba(125,200,255)，仅装饰、不可交互）
+    const headH = this.settingsRows.music.y - c.y;
+    ctx.save();
+    ctx.beginPath();
+    roundRectPath(ctx, c.x, c.y, c.w, c.h, 24);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.rect(c.x, c.y, c.w, headH);
+    const pg = ctx.createLinearGradient(0, c.y, 0, c.y + headH);
+    pg.addColorStop(0, 'rgba(125,200,255,0.9)');
+    pg.addColorStop(1, 'rgba(125,200,255,0.55)');
+    ctx.fillStyle = pg;
+    ctx.fill();
+    ctx.restore();
+    // 立体文字：底部暗影 + 亮色主体
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillText('设', x1, ty + 1.5);
+    ctx.fillText('置', x2, ty + 1.5);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('设', x1, ty);
+    ctx.fillText('置', x2, ty);
 
     const s = this.app.uiState;
     this._drawSettingsRow(ctx, this.settingsRows.music, '音乐', null, !!s.musicOn, 'music');
@@ -615,12 +672,14 @@ class UI {
     if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#ffd54f', '#f5b400', this.pressId === 'settingsRestart', false, now, '#ffffff');
     const b = this.settingsCloseBtn;
     if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose', true, now, '#fff');
+
+    ctx.restore();
   }
 
-  // “选择关卡”中枢：返回教学关 / 回到第 N 关（N=当前真实进度）
   // 设置面板底部按钮：圆角胶囊、文字居中，press 时轻微缩小并提亮，
-  // pulse 时（未按压）做轻微放大缩小呼吸效果
-  _drawPanelButton(ctx, btn, label, c0, c1, pressed, pulse, now, textColor) {
+  // pulse 时（未按压）做轻微呼吸放大效果
+  // fontSize / letterSpacing 可选：用于通关界面“下一关”等需要更大、更舒展字距的场景
+  _drawPanelButton(ctx, btn, label, c0, c1, pressed, pulse, now, textColor, fontSize = 15, letterSpacing = 0) {
     ctx.save();
     if (pressed) {
       ctx.globalAlpha = 0.92;
@@ -640,12 +699,31 @@ class UI {
     g.addColorStop(1, pressed ? this._lighten(c1) : c1);
     ctx.fillStyle = g;
     ctx.fill();
-      ctx.fillStyle = textColor || '#fff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = rf('700', 15);
+    // 顶部高光线，增加立体质感
+    ctx.beginPath();
+    roundRectPath(ctx, btn.x + 2, btn.y + 1.5, btn.w - 4, btn.h / 2, btn.h / 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fill();
+    ctx.save();
+    ctx.fillStyle = textColor || '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = rf('700', fontSize);
+    if (letterSpacing > 0) {
+      const chars = String(label).split('');
+      const widths = chars.map((ch) => ctx.measureText(ch).width);
+      const total = widths.reduce((a, b) => a + b, 0) + letterSpacing * (chars.length - 1);
+      let x = btn.x + btn.w / 2 - total / 2;
+      const y = btn.y + btn.h / 2 + 1;
+      for (let i = 0; i < chars.length; i++) {
+        ctx.fillText(chars[i], x + widths[i] / 2, y);
+        x += widths[i] + letterSpacing;
+      }
+    } else {
       ctx.fillText(label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
-      ctx.restore();
+    }
+    ctx.restore();
+    ctx.restore();
   }
 
   _lighten(hex) {
@@ -660,15 +738,27 @@ class UI {
   _drawSettingsRow(ctx, row, label, hint, on, icon) {
     if (!row) return;
     ctx.beginPath();
-    roundRectPath(ctx, row.x, row.y, row.w, row.h, row.h / 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    roundRectPath(ctx, row.x, row.y, row.w, row.h, 14);
+    const rg = ctx.createLinearGradient(0, row.y, 0, row.y + row.h);
+    rg.addColorStop(0, 'rgba(255,255,255,0.07)');
+    rg.addColorStop(1, 'rgba(255,255,255,0.03)');
+    ctx.fillStyle = rg;
     ctx.fill();
-    if (icon) this._drawRowIcon(ctx, icon, row.x + 22, row.y + row.h / 2, 20, 'rgba(234,246,255,0.94)');
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // 圆形图标徽章
+    const ix = row.x + 28, iy = row.y + row.h / 2;
+    ctx.beginPath();
+    ctx.arc(ix, iy, 16, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(125,200,255,0.16)';
+    ctx.fill();
+    if (icon) this._drawRowIcon(ctx, icon, ix, iy, 18, '#bfe3ff');
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(234,246,255,0.94)';
     ctx.font = rf('600', 15);
-    ctx.fillText(label, row.x + 44, row.y + row.h / 2 + 0.5);
+    ctx.fillText(label, row.x + 54, row.y + row.h / 2 + 0.5);
     if (on === null) {
       // action row (重开)
       ctx.textAlign = 'right';
@@ -676,19 +766,29 @@ class UI {
       ctx.font = rf('500', 12);
       ctx.fillText(hint || '', row.x + row.w - 16, row.y + row.h / 2 + 0.5);
     } else {
-      // toggle switch
-      const swW = 44, swH = 24;
+      // 精致开关：开启渐变轨道 + 带柔影的滑块
+      const swW = 46, swH = 26;
       const sx = row.x + row.w - 16 - swW;
       const sy = row.y + (row.h - swH) / 2;
       ctx.beginPath();
       roundRectPath(ctx, sx, sy, swW, swH, swH / 2);
-      ctx.fillStyle = on ? 'rgba(125,200,255,0.9)' : 'rgba(255,255,255,0.2)';
+      if (on) {
+        ctx.fillStyle = 'rgba(125,200,255,0.9)';
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      }
       ctx.fill();
-      const kx = on ? sx + swW - swH + 2 : sx + 2;
+      const knobR = (swH - 6) / 2;
+      const kx = on ? sx + swW - swH / 2 - 3 : sx + swH / 2 + 3;
+      const ky = sy + swH / 2;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 4;
       ctx.beginPath();
-      ctx.arc(kx + (swH - 4) / 2, sy + swH / 2, (swH - 4) / 2, 0, Math.PI * 2);
+      ctx.arc(kx, ky, knobR, 0, Math.PI * 2);
       ctx.fillStyle = '#fff';
       ctx.fill();
+      ctx.restore();
     }
   }
 
@@ -840,86 +940,98 @@ class UI {
     ctx.fillStyle = 'rgba(2,10,22,0.66)';
     ctx.fillRect(0, 0, L.width, L.height);
 
-    // confetti
     this._updateConfetti(now);
 
-    const cardW = Math.min(L.width * 0.8, 320);
-    const cardH = 210;
-    const cx = (L.width - cardW) / 2;
-    const cy = (L.height - cardH) / 2;
+    const cardW = Math.min(L.width * 0.84, 340);
+    const cardH = 248;
+    const cx = Math.round((L.width - cardW) / 2);
+    const cy = Math.round((L.height - cardH) / 2);
 
+    // 卡片（与设置面板同款：深蓝渐变 + 蓝边 + 圆角投影）
     ctx.save();
     ctx.shadowColor = 'rgba(0,5,15,0.6)';
     ctx.shadowBlur = 40;
     ctx.beginPath();
-    roundRectPath(ctx, cx, cy, cardW, cardH, 26);
+    roundRectPath(ctx, cx, cy, cardW, cardH, 24);
     const g = ctx.createLinearGradient(0, cy, 0, cy + cardH);
-    g.addColorStop(0, 'rgba(13,36,58,0.9)');
-    g.addColorStop(1, 'rgba(3,14,28,0.94)');
+    g.addColorStop(0, 'rgba(15,40,64,0.96)');
+    g.addColorStop(1, 'rgba(3,14,28,0.97)');
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(125,200,255,0.28)';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
     ctx.restore();
 
-    // trophy
+    // 顶部高光（与设置面板一致）
     ctx.save();
-    ctx.translate(cx + cardW / 2, cy + 46);
-    this._drawTrophy(ctx);
+    ctx.beginPath();
+    roundRectPath(ctx, cx, cy, cardW, cardH, 24);
+    ctx.clip();
+    const hg = ctx.createLinearGradient(0, cy, 0, cy + 46);
+    hg.addColorStop(0, 'rgba(255,255,255,0.18)');
+    hg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hg;
+    ctx.fillRect(cx, cy, cardW, 46);
     ctx.restore();
 
-    // 标题（去掉用时/消除/提示/最佳等成绩统计）
+    // 随机手绘图案（每局一个，作为通关纪念）：淡蓝圆角方块铺满，手绘图透明底居中
+    const pat = (s.win && s.win.pattern) || 1;
+    const sz = 76, r = 16;
+    ctx.save();
+    ctx.translate(cx + cardW / 2, cy + 50);
+    // 淡蓝底（铺满至圆角边框，无内隙）
+    roundRectPath(ctx, -sz / 2, -sz / 2, sz, sz, r);
+    const bg = ctx.createLinearGradient(0, -sz / 2, 0, sz / 2);
+    bg.addColorStop(0, '#bfe6fb');
+    bg.addColorStop(1, '#7cbfe6');
+    ctx.fillStyle = bg;
+    ctx.fill();
+    // 顶部高光，与按钮一致的立体感
+    ctx.save();
+    roundRectPath(ctx, -sz / 2, -sz / 2, sz, sz, r);
+    ctx.clip();
+    const sh = ctx.createLinearGradient(0, -sz / 2, 0, -sz / 2 + 30);
+    sh.addColorStop(0, 'rgba(255,255,255,0.28)');
+    sh.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sh;
+    ctx.fillRect(-sz / 2, -sz / 2, sz, 30);
+    ctx.restore();
+    // 手绘图案（透明底）居中铺设
+    const img = RenderView.patternImage(pat);
+    if (img && img.width) {
+      const scale = sz / Math.max(img.width, img.height);
+      const dw = img.width * scale, dh = img.height * scale;
+      ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    }
+    // 描边
+    ctx.beginPath();
+    roundRectPath(ctx, -sz / 2, -sz / 2, sz, sz, r);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // 标题（金色 + 暗影立体，圆润字体、整体下移）
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.font = rf('700', 26);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillText('恭喜通关', cx + cardW / 2, cy + 128 + 1.5);
     ctx.fillStyle = '#ffd54f';
-    ctx.font = rf('800', 26);
-    ctx.fillText('恭喜通关', cx + cardW / 2, cy + 104);
+    ctx.fillText('恭喜通关', cx + cardW / 2, cy + 128);
 
-    // 按钮：“下一关”
-    const bw = 170, bh = 46;
-    const bx = cx + (cardW - bw) / 2, by = cy + cardH - 58;
-    const pressing = this.winPressId === 'winRestart';
-    const sc = pressing ? 0.94 : (1 + 0.04 * Math.sin(now * 0.006));
-    ctx.save();
-    ctx.translate(bx + bw / 2, by + bh / 2);
-    ctx.scale(sc, sc);
-    ctx.translate(-(bx + bw / 2), -(by + bh / 2));
-    ctx.beginPath();
-    roundRectPath(ctx, bx, by, bw, bh, bh / 2);
-    const g2 = ctx.createLinearGradient(0, by, 0, by + bh);
-    g2.addColorStop(0, '#58d97e');
-    g2.addColorStop(1, '#2fae5c');
-    ctx.fillStyle = g2;
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = rf('700', 16);
-    ctx.fillText('下一关', bx + bw / 2, by + bh / 2 + 1);
-    ctx.restore();
+    // 副标题：刚通关的关卡（与标题一同下移）
+    const cleared = Math.max(1, (s.level || 1) - 1);
+    ctx.font = rf('500', 13);
+    ctx.fillStyle = 'rgba(234,246,255,0.7)';
+    ctx.fillText('第 ' + cleared + ' 关 完成', cx + cardW / 2, cy + 158);
+
+    // 按钮：“下一关”（淡蓝底，与上方图案同色；圆润字体、加大、字距舒展，同款立体凸起）
+    const bw = 180, bh = 46;
+    const bx = cx + (cardW - bw) / 2, by = cy + cardH - 56;
     this.winBtn = { x: bx, y: by, w: bw, h: bh };
-  }
-
-  _drawTrophy(ctx) {
-    ctx.scale(0.9, 0.9);
-    ctx.beginPath();
-    ctx.moveTo(-12, -26); ctx.lineTo(12, -26); ctx.lineTo(12, -10);
-    ctx.arc(0, -10, 12, 0, Math.PI);
-    ctx.closePath();
-    ctx.fillStyle = '#ffe27a';
-    ctx.fill();
-    ctx.strokeStyle = '#f0a51e';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.fillStyle = '#c8871a';
-    ctx.fillRect(-7, -6, 14, 6);
-    ctx.beginPath();
-    roundRectPath(ctx, -9, 0, 18, 8, 3);
-    ctx.fillStyle = '#ffe27a';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(0, -18, 3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fill();
+    this._drawPanelButton(ctx, this.winBtn, '下一关', '#58d97e', '#2fae5c', this.winPressId === 'winRestart', true, now, '#fff', 20, 8);
   }
 
   spawnConfetti() {

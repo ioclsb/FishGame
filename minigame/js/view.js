@@ -129,6 +129,11 @@ class RenderView {
     return bucket.entries[pattern];
   }
 
+  // 取手绘原图（透明底），用于界面装饰（如通关纪念图）直接铺设
+  static patternImage(pattern) {
+    return _patternImg[pattern] || null;
+  }
+
   static _tileCanvas() {
     const s = createCanvas();
     s.width = G.cell * G.dpr; s.height = G.cell * G.dpr;
