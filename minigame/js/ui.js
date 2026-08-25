@@ -4,7 +4,7 @@
 // coach overlay, the win overlay (with confetti) and the settings panel.
 // Everything is drawn on the screen canvas and hit-tested through hitTest().
 
-const { roundRectPath, RenderView } = require('./view.js');
+const { roundRectPath, RenderView, cellCenterInBoard } = require('./view.js');
 const { shade } = require('./creatures.js');
 
 // 圆润字体栈（设备不支持圆体时回退到常规无衬线）
@@ -37,8 +37,8 @@ class UI {
     this.winBtn = null;         // {x, y, w, h}
     this.settingsCloseBtn = null; // {x, y, w, h}
     this.settingsRestartBtn = null; // {x, y, w, h}
-    this.settingsResetBtn = null;   // {x, y, w, h} 回到第1关
-    this.pressId = null; // 底部按钮按压反馈：'settingsReset' | 'settingsRestart' | 'settingsClose'
+    this.tutorialSkipBtn = null; // {x, y, w, h} 教学关“跳过引导”
+    this.pressId = null; // 底部按钮按压反馈：'settingsRestart' | 'settingsClose'
     this.winPressId = null; // 结算“再来一局”按压反馈
     this.confetti = [];         // active confetti pieces
     this.fishX = 0;             // animated fish position along the bar
@@ -94,7 +94,7 @@ class UI {
   // works even before the first render of the panel).
   _layoutSettings(W, H) {
     const cardW = Math.min(W * 0.8, 320);
-    const cardH = 320;
+    const cardH = 300;
     const c = { x: Math.round((W - cardW) / 2), y: Math.round((H - cardH) / 2), w: cardW, h: cardH };
     const rowX = c.x + 20;
     const rowW = cardW - 40;
@@ -108,7 +108,6 @@ class UI {
     const bh = 42;
     const gap = 12;
     const bw = Math.round((rowW - gap) / 2);
-    this.settingsResetBtn = { x: c.x + 20, y: c.y + 224, w: rowW, h: bh };
     this.settingsRestartBtn = { x: c.x + 20, y: c.y + cardH - 46, w: bw, h: bh };
     this.settingsCloseBtn = { x: c.x + 20 + bw + gap, y: c.y + cardH - 46, w: bw, h: bh };
   }
@@ -117,6 +116,11 @@ class UI {
   // Returns a descriptor consumed by App.handleTap:
   //   { zone:'overlay', id } | { zone:'button', id } | { zone:'board' } | null
   hitTest(x, y) {
+    if (this.app.uiState.tutorial && this.tutorialSkipBtn &&
+        x >= this.tutorialSkipBtn.x && x <= this.tutorialSkipBtn.x + this.tutorialSkipBtn.w &&
+        y >= this.tutorialSkipBtn.y && y <= this.tutorialSkipBtn.y + this.tutorialSkipBtn.h) {
+      return { zone: 'overlay', id: 'tutorialSkip' };
+    }
     if (this.app.settingsVisible()) {
       const rows = this.settingsRows;
       if (rows) {
@@ -134,10 +138,6 @@ class UI {
       if (this.settingsCloseBtn && x >= this.settingsCloseBtn.x && x <= this.settingsCloseBtn.x + this.settingsCloseBtn.w &&
           y >= this.settingsCloseBtn.y && y <= this.settingsCloseBtn.y + this.settingsCloseBtn.h) {
         return { zone: 'overlay', id: 'settingsClose' };
-      }
-      if (this.settingsResetBtn && x >= this.settingsResetBtn.x && x <= this.settingsResetBtn.x + this.settingsResetBtn.w &&
-          y >= this.settingsResetBtn.y && y <= this.settingsResetBtn.y + this.settingsResetBtn.h) {
-        return { zone: 'overlay', id: 'settingsReset' };
       }
       return { zone: 'overlay', id: null }; // block board while settings is up
     }
@@ -212,9 +212,85 @@ class UI {
 
     this._drawHud(ctx, now);
     this._drawMsg(ctx, now);
+    if (this.app.uiState.tutorial) this._drawTutorial(ctx, now);
     if (this.app.coachVisible()) this._drawCoach(ctx);
     if (this.app.winVisible()) this._drawWin(ctx, now);
     if (this.app.settingsVisible()) this._drawSettings(ctx, now);
+  }
+
+  // 教学关引导层（非阻断：棋盘仍可正常操作）
+  _drawTutorial(ctx, now) {
+    const L = this.layout;
+    const br = L.board;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+
+    // 顶部说明横幅
+    const banH = 64;
+    ctx.save();
+    ctx.fillStyle = 'rgba(3,16,30,0.82)';
+    roundRectPath(ctx, 16, 12, L.width - 32, banH, 16);
+    ctx.fill();
+    ctx.fillStyle = '#eaf6ff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = rf('700', 16);
+    ctx.fillText('教学关：把相同的两条鱼滑到一起就能消除', L.width / 2, 12 + banH / 2);
+    ctx.restore();
+
+    // 高亮一对建议消除的鱼 + 滑动箭头
+    const hint = this.app.uiState.coachHint;
+    if (hint && hint.target && (hint.group || hint.blockId != null)) {
+      const cellA = hint.group ? hint.group[0] : null;
+      const cellB = hint.target;
+      if (cellA) {
+        const a = cellCenterInBoard(cellA.r, cellA.c);
+        const b = cellCenterInBoard(cellB.r, cellB.c);
+      const ax = br.x + a.x, ay = br.y + a.y, bx = br.x + b.x, by = br.y + b.y;
+      const s = (br.w / 10) * 0.5; // 屏幕上方块半边长（棋盘 10 列）
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,221,87,${0.6 + pulse * 0.3})`;
+      ctx.lineWidth = 3;
+      [ [ax, ay], [bx, by] ].forEach(([cx, cy]) => {
+        roundRectPath(ctx, cx - s, cy - s, s * 2, s * 2, 10);
+        ctx.stroke();
+      });
+      ctx.strokeStyle = `rgba(255,221,87,${0.7 + pulse * 0.3})`;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      const ang = Math.atan2(by - ay, bx - ax);
+      const ah = 10;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx - ah * Math.cos(ang - Math.PI / 6), by - ah * Math.sin(ang - Math.PI / 6));
+      ctx.lineTo(bx - ah * Math.cos(ang + Math.PI / 6), by - ah * Math.sin(ang + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      }
+    }
+
+    // 底部“跳过引导”按钮
+    const bw = 160, bh = 40;
+    const sx = (L.width - bw) / 2;
+    const sky = L.height - 56;
+    this.tutorialSkipBtn = { x: sx, y: sky, w: bw, h: bh };
+    ctx.save();
+    roundRectPath(ctx, sx, sky, bw, bh, 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#eaf6ff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = rf('600', 15);
+    ctx.fillText('跳过引导', sx + bw / 2, sky + bh / 2);
+    ctx.restore();
   }
 
   _drawHud(ctx, now) {
@@ -534,15 +610,14 @@ class UI {
     this._drawSettingsRow(ctx, this.settingsRows.sound, '音效', null, !!s.soundOn, 'sound');
     this._drawSettingsRow(ctx, this.settingsRows.vibrate, '震动', null, !!s.vibrate, 'vibrate');
 
-    // 底部按钮：上排“回到第 1 关”（蓝），下排左“重新开始”（黄）、右“返回游戏”（绿）
-    const rbtn = this.settingsResetBtn;
-    if (rbtn) this._drawPanelButton(ctx, rbtn, '回到第 1 关', '#6ec6ff', '#2f8fd6', this.pressId === 'settingsReset', false, now, '#ffffff');
+    // 底部按钮：左“重新开始”（黄）、右“返回游戏”（绿）
     const rb = this.settingsRestartBtn;
     if (rb) this._drawPanelButton(ctx, rb, '重新开始', '#ffd54f', '#f5b400', this.pressId === 'settingsRestart', false, now, '#ffffff');
     const b = this.settingsCloseBtn;
     if (b) this._drawPanelButton(ctx, b, '返回游戏', '#58d97e', '#2fae5c', this.pressId === 'settingsClose', true, now, '#fff');
   }
 
+  // “选择关卡”中枢：返回教学关 / 回到第 N 关（N=当前真实进度）
   // 设置面板底部按钮：圆角胶囊、文字居中，press 时轻微缩小并提亮，
   // pulse 时（未按压）做轻微放大缩小呼吸效果
   _drawPanelButton(ctx, btn, label, c0, c1, pressed, pulse, now, textColor) {
@@ -801,7 +876,7 @@ class UI {
     ctx.font = rf('800', 26);
     ctx.fillText('恭喜通关', cx + cardW / 2, cy + 104);
 
-    // “再来一局”：按压时缩小、平时轻微呼吸缩放（放大缩小效果）
+    // 按钮：“下一关”
     const bw = 170, bh = 46;
     const bx = cx + (cardW - bw) / 2, by = cy + cardH - 58;
     const pressing = this.winPressId === 'winRestart';

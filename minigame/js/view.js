@@ -972,7 +972,12 @@ RenderView._frameCostMs = 0;
 RenderView._sprites = null;
 RenderView._paused = false;
 
-module.exports = { RenderView, G, computeLayout, PATTERN_COLORS, roundRectPath, createCanvas };
+// 单元格中心（在棋盘画布坐标系内），供 UI 引导层精确定位高亮/箭头
+function cellCenterInBoard(r, c) {
+  return { x: c * G.pitch + G.cell / 2, y: r * G.pitch + G.cell / 2 };
+}
+
+module.exports = { RenderView, G, computeLayout, PATTERN_COLORS, roundRectPath, createCanvas, cellCenterInBoard };
 
 // 启动即预加载手绘贴图（微信环境内；缺失文件 onerror 静默走矢量兜底）
 if (typeof wx !== 'undefined') _loadPatternImages();

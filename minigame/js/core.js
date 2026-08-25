@@ -16,7 +16,7 @@ const TOTAL_PAIRS = TOTAL_BLOCKS / 2; // 70 对
 // 前期（每图案约 5 对）比“一眼成片”难，但仍温和。
 const BASE_PATTERNS = 14;        // 第 1 关图案数（每图案 10 块 = 5 对）
 const MAX_PATTERNS = 70;         // 最终图案数（每种恰好 2 块 = 1 对，铺满 70 对）
-const PATTERN_FIXED_LEVEL = 300; // 图案数在 300 关引入完毕，之后不再新增
+const PATTERN_FIXED_LEVEL = 380; // 图案数在约第 350 关引入完毕（顶配 70），之后不再新增；曲线比 300 更平缓
 const LAYOUT_FIXED_LEVEL = 500;  // 仅排布难度继续爬升到 500 关后封顶
 
 // 预览用：设为非空数组时，棋盘只铺这些图案（真实编号），其余暂不登场。
@@ -27,7 +27,7 @@ const LAYOUT_FIXED_LEVEL = 500;  // 仅排布难度继续爬升到 500 关后封
 const RETAINED_PATTERNS = null;
 function activePatternIds(level) {
   if (RETAINED_PATTERNS && RETAINED_PATTERNS.length) return RETAINED_PATTERNS.slice();
-  const P = patternCountForLevel(level);
+  const P = regionPatternCount(level);
   return Array.from({ length: P }, (_, i) => i + 1);
 }
 
@@ -40,14 +40,42 @@ function patternCountForLevel(level) {
   return Math.min(MAX_PATTERNS, Math.max(BASE_PATTERNS, P));
 }
 
+// 前期“体验版”棋盘：只填充棋盘中央一小块区域（四周留空），关卡越低区域越小；
+// 既降低难度，又不改棋盘几何/滑动物理（引擎本就支持空格，消除后棋盘亦然）。
+function boardDimsForLevel(level) {
+  if (level <= 0) return { rows: 4, cols: 4 }; // 教学关
+  if (level >= 6) return { rows: ROWS, cols: COLS };
+  const table = {
+    1: { rows: 5, cols: 6 },
+    2: { rows: 6, cols: 8 },
+    3: { rows: 7, cols: 10 },
+    4: { rows: 9, cols: 10 },
+    5: { rows: 11, cols: 10 },
+  };
+  return table[level] || { rows: ROWS, cols: COLS };
+}
+
+// 启用的图案数：前期更少（更好认），且不超过“每图案至少约 4 块”的容量上限
+function regionPatternCount(level) {
+  if (level <= 0) return 2; // 教学关只用 2 种
+  const early = { 1: 5, 2: 7, 3: 9, 4: 12, 5: 14 }[level];
+  if (early != null) {
+    const { rows, cols } = boardDimsForLevel(level);
+    const cap = Math.floor((rows * cols) / 4);
+    return Math.max(3, Math.min(early, cap));
+  }
+  return patternCountForLevel(level);
+}
+
 // 把 140 块按偶数均衡分配给当前启用的图案集（和=140，每种均为偶数，可两两消完）。
-function countsForLevel(level) {
+function countsForLevel(level, totalBlocks) {
   const pids = activePatternIds(level);
   const P = pids.length;
-  let base = Math.floor(TOTAL_BLOCKS / P);
+  const N = (totalBlocks != null) ? totalBlocks : TOTAL_BLOCKS;
+  let base = Math.floor(N / P);
   if (base % 2 === 1) base -= 1;          // 取不超过均值的偶数
   const counts = new Array(P).fill(base);
-  let remaining = TOTAL_BLOCKS - base * P; // 必为偶数
+  let remaining = N - base * P; // 必为偶数
   let idx = 0;
   while (remaining > 0) { counts[idx % P] += 2; remaining -= 2; idx++; }
   return counts;
@@ -74,15 +102,25 @@ class GameCore {
     this.nextId = 1;
     this.undoSnapshot = null; // snapshot of the board before the last elimination
     this.level = 1;
+    this.rows = ROWS;
+    this.cols = COLS;
+    this.totalBlocks = TOTAL_BLOCKS;
+    this.totalPairs = TOTAL_PAIRS;
     this.init(level);
   }
 
   init(level) {
-    if (level != null) this.level = Math.max(1, level | 0);
+    if (level != null) this.level = level | 0; // 允许 0（教学关哨兵）
     for (let attempt = 0; attempt < 100; attempt++) {
       this._generateLayout();
       if (this.findHint() !== null) return;
     }
+    this._generateLayout();
+  }
+
+  // 首启教学关：小棋盘（4x4）+ 2 种图案的引导盘面
+  loadTutorial() {
+    this.level = 0;
     this._generateLayout();
   }
 
@@ -93,8 +131,16 @@ class GameCore {
     this.nextId = 1;
     this.undoSnapshot = null;   // a fresh board has no undo history
 
+    const { rows, cols } = boardDimsForLevel(this.level);
+    this.rows = rows;
+    this.cols = cols;
+    this.totalBlocks = rows * cols;
+    this.totalPairs = this.totalBlocks / 2;
+    const r0 = Math.floor((ROWS - rows) / 2);
+    const c0 = Math.floor((COLS - cols) / 2);
+
     const pids = activePatternIds(this.level);
-    const counts = countsForLevel(this.level);
+    const counts = countsForLevel(this.level, this.totalBlocks);
     const target = targetAdjacencyForLevel(this.level);
 
     // 多次尝试：随机铺底 + 贪心去聚堆，直到“有可点开局(≥1对)且达到目标上限”。
@@ -104,9 +150,9 @@ class GameCore {
       counts.forEach((cnt, i) => { for (let k = 0; k < cnt; k++) bag.push(pids[i]); });
       this._shuffleArray(bag);
       let bi = 0;
-      for (let r = 0; r < ROWS; r++)
-        for (let c = 0; c < COLS; c++)
-          this.grid[r][c] = bag[bi++];
+      for (let r = 0; r < rows; r++)
+        for (let c = 0; c < cols; c++)
+          this.grid[r0 + r][c0 + c] = bag[bi++];
 
       this._declutter(target); // 原地交换去聚堆，保持各图案数量不变
 
@@ -115,7 +161,9 @@ class GameCore {
       if (adj >= 1 && (!fallback || adj < fallback.adj)) {
         fallback = { adj, grid: this.grid.map(row => row.slice()) };
       }
-      this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0)); // 重置以便下次尝试
+      for (let r = 0; r < rows; r++)
+        for (let c = 0; c < cols; c++)
+          this.grid[r0 + r][c0 + c] = 0; // 仅清空区域以便下次尝试
     }
     if (fallback) this.grid = fallback.grid;
 
@@ -228,10 +276,13 @@ class GameCore {
 
   getGrid() { return this.grid; }
   getBlocks() { return this.blocks; }
-  getTotalPairs() { return TOTAL_PAIRS; }
+  getTotalPairs() { return this.totalPairs; }
   getClearedPairs() { return this.clearedPairs; }
-  getProgress() { return this.clearedPairs / TOTAL_PAIRS; }
+  getProgress() { return this.clearedPairs / this.totalPairs; }
   getPatternCount() { return this.blocks.length; }
+  getTotalBlocks() { return this.totalBlocks; }
+  getRows() { return this.rows; }
+  getCols() { return this.cols; }
 
   getPushGroup(r, c, dir) {
     const start = (DEBUG && !this._probing) ? dbg({ type: 'getPushGroup', r, c, dir, srcPattern: this.grid && this.grid[r] ? this.grid[r][c] : undefined }) : null;
@@ -598,14 +649,14 @@ GameCore.DIRS = {
 };
 const selfTests = {
   core() {
-    const c = new GameCore();
+    const c = new GameCore(300); // 满棋盘关卡校验结构不变
     const checks = [];
     checks.push(c.getGrid().length === ROWS);
     checks.push(c.getGrid().every(row => row.length === COLS));
     checks.push(c.getPatternCount() === TOTAL_BLOCKS);
     checks.push(c.getTotalPairs() === TOTAL_PAIRS);
-    const expected = countsForLevel(1);
-    const pids = activePatternIds(1);
+    const expected = countsForLevel(300, TOTAL_BLOCKS);
+    const pids = activePatternIds(300);
     const counts = new Array(Math.max.apply(null, pids) + 1).fill(0);
     for (const b of c.getBlocks()) counts[b.pattern]++;
     checks.push(pids.every((pid, i) => counts[pid] === expected[i]));
@@ -615,6 +666,31 @@ const selfTests = {
       for (let col = 0; col < COLS; col++)
         if (c.getGrid()[r][col] === 0) empty++;
     checks.push(empty === 0);
+    return checks;
+  },
+
+  experience() {
+    const checks = [];
+    const c = new GameCore(1);
+    checks.push(c.getCols() === 6 && c.getRows() === 5);
+    checks.push(c.getTotalBlocks() === 30 && c.getPatternCount() === 30);
+    const pids = activePatternIds(1);
+    checks.push(pids.length === 5);
+    const counts = {};
+    for (const b of c.getBlocks()) counts[b.pattern] = (counts[b.pattern] || 0) + 1;
+    checks.push(pids.every(p => counts[p] % 2 === 0 && counts[p] > 0));
+    let empty = 0;
+    for (let r = 0; r < ROWS; r++)
+      for (let col = 0; col < COLS; col++)
+        if (c.getGrid()[r][col] === 0) empty++;
+    checks.push(empty === ROWS * COLS - 30);
+    checks.push(c.findHint() !== null);
+    // 教学关
+    const t = new GameCore(0);
+    checks.push(t.getCols() === 4 && t.getRows() === 4);
+    checks.push(t.getTotalBlocks() === 16 && t.getPatternCount() === 16);
+    const tpids = activePatternIds(0);
+    checks.push(tpids.length === 2);
     return checks;
   },
 

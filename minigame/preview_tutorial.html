@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+<title>教学关预览</title>
+<style>
+  html,body{margin:0;background:#0a1a2c;color:#eaf6ff;font-family:"PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;}
+  canvas{background:#0a1a2c;border-radius:14px;max-width:100%;}
+  .note{font-size:13px;opacity:.8;max-width:420px;line-height:1.6;}
+  code{color:#ffd54f;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="cv" width="390" height="780"></canvas>
+  <div class="note">
+    这是「教学关」的预览（用你真实的手绘鱼 01/02 拼成）：<br>
+    • 顶部深色横幅提示：<b>把相同的两条鱼滑到一起就能消除</b><br>
+    • 一对相同鱼被<b>黄色脉动方框</b>高亮，中间画<b>箭头</b>示意滑动方向<br>
+    • 棋盘只有 <code>4×4</code> 共 16 块、仅 2 种鱼，四周留空，很容易通关<br>
+    • 底部有「跳过引导」按钮<br>
+    • 消除第一对后箭头消失、提示变为鼓励；清盘后自动进入正式第 1 关<br>
+    <i>（真机里这 4×4 会铺在 10×14 大棋盘的正中央，四周是空白海面）</i>
+  </div>
+</div>
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+
+// 海洋渐变背景
+const g = ctx.createLinearGradient(0,0,0,H);
+g.addColorStop(0,'#0e2740'); g.addColorStop(1,'#061320');
+ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+// 棋盘参数（4x4，居中）
+const N = 4, tile = 78, gap = 6;
+const boardW = N*tile + (N-1)*gap;
+const bx = (W - boardW)/2;
+const by = 200;
+// 棋盘底框
+ctx.fillStyle = 'rgba(255,255,255,0.06)';
+roundRect(bx-gap, by-gap, boardW+gap*2, boardW+gap*2, 16); ctx.fill();
+
+// 固定一个可解布局（1=小丑鱼 2=蓝吊鱼），其中 (0,0)(0,1) 是一对相邻相同，用于高亮
+const layout = [
+  [1,1,2,2],
+  [2,1,1,2],
+  [1,2,2,1],
+  [2,1,2,1],
+];
+const imgs = {};
+let loaded = 0;
+function load(p){ return new Promise(r=>{ const i=new Image(); i.onload=()=>{imgs[p]=i; if(++loaded===2) draw();}; i.onerror=()=>{if(++loaded===2) draw();}; i.src='assets/patterns/0'+p+'.png'; }); }
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function cellXY(r,c){ return { x: bx + c*(tile+gap), y: by + r*(tile+gap) }; }
+function cellCenter(r,c){ const p=cellXY(r,c); return { x:p.x+tile/2, y:p.y+tile/2 }; }
+
+function draw(){
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const p = cellXY(r,c);
+    if(imgs[layout[r][c]]) ctx.drawImage(imgs[layout[r][c]], p.x, p.y, tile, tile);
+    else { ctx.fillStyle='#16344f'; roundRect(p.x,p.y,tile,tile,12); ctx.fill(); }
+  }
+
+  // 高亮 (0,0)-(0,1) 这一对相同鱼 + 箭头
+  const a = cellCenter(0,0), b = cellCenter(0,1);
+  ctx.strokeStyle = 'rgba(255,221,87,0.95)'; ctx.lineWidth = 4;
+  [a,b].forEach(c=>{ ctx.strokeRect(c.x-tile/2+4, c.y-tile/2+4, tile-8, tile-8); });
+  // 箭头 a->b
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  const ang = Math.atan2(b.y-a.y, b.x-a.x), ah=14;
+  ctx.beginPath(); ctx.moveTo(b.x,b.y);
+  ctx.lineTo(b.x-ah*Math.cos(ang-Math.PI/6), b.y-ah*Math.sin(ang-Math.PI/6));
+  ctx.lineTo(b.x-ah*Math.cos(ang+Math.PI/6), b.y-ah*Math.sin(ang+Math.PI/6));
+  ctx.closePath(); ctx.fillStyle='rgba(255,221,87,0.95)'; ctx.fill();
+
+  // 顶部横幅
+  ctx.fillStyle = 'rgba(3,16,30,0.85)'; roundRect(16, 90, W-32, 70, 16); ctx.fill();
+  ctx.fillStyle = '#eaf6ff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font = '700 16px sans-serif';
+  ctx.fillText('教学关：把相同的两条鱼', W/2, 118);
+  ctx.fillText('滑到一起就能消除', W/2, 142);
+
+  // 底部“跳过引导”按钮
+  const sbw=130, sbh=42, sx=(W-sbw)/2, sy=H-70;
+  ctx.fillStyle='rgba(255,255,255,0.16)'; roundRect(sx,sy,sbw,sbh,21); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.fillStyle='#eaf6ff'; ctx.font='600 15px sans-serif';
+  ctx.fillText('跳过引导', W/2, sy+sbh/2);
+}
+load(1); load(2);
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 
 const { G: GLOBAL } = require('./globals.js');
 const { GameCore } = require('./core.js');
-const { RenderView, G } = require('./view.js');
+const { RenderView, G, cellCenterInBoard } = require('./view.js');
 const { UI } = require('./ui.js');
 const { SoundManager } = require('./sound.js');
 const storage = require('./storage.js');
@@ -12,7 +12,7 @@ require('./debug.js');
 
 const DEBUG = GLOBAL.__DEBUG_ENABLED === true;
 // 开发跳关：设为目标关（如 36）启动即直跳该关；用毕改回 0 恢复常规进度。
-const JUMP_TO_LEVEL = 50;
+const JUMP_TO_LEVEL = 0;
 const PATTERN_NAMES = ['小丑鱼', '蓝倒吊', '绿海龟', '河豚', '紫水母', '小红蟹'];
 // 顶部设置按钮与安全区之间的留白
 const TOP_PAD = 12;
@@ -70,6 +70,8 @@ class App {
       stuck: false,
       msg: null,
       coach: false,
+      tutorial: false,
+      coachHint: null,
       win: null,
       settings: false,
       level: this._loadLevel(),
@@ -373,8 +375,39 @@ class App {
     let coached = false;
     try { coached = storage.get('psm.coached') === '1'; } catch (e) {}
     if (coached) return;
-    this.uiState.coach = true;
-    RenderView.setPaused(true);
+    // 首启：进入互动教学关（小棋盘 + 引导），用 psm.coached 标记是否完成教学。
+    // 教学关可交互、不暂停、不弹阻断式弹窗——玩家直接在引导下一步步玩。
+    this.uiState.tutorial = true;
+    this.core.loadTutorial();
+    this.view = new RenderView(this.boardCanvas, this.core, this.platform);
+    this._wireView(this.view);
+    RenderView.setPaused(false);
+    this.uiState.coachHint = this.core.findHint();
+    this.setMsg('把相同的两条鱼滑到一起，就能消除', 6000);
+  }
+
+  // 跳过/完成教学：标记已教学，重置进度到第 1 关并进入正常游戏
+  _finishTutorial() {
+    this.uiState.tutorial = false;
+    this.uiState.coach = false;
+    this.uiState.coachHint = null;
+    try { storage.set('psm.coached', '1'); } catch (e) {}
+    RenderView.setPaused(false);
+    if (this.view) this.view._bumpToken();
+    this.uiState.level = 1;
+    try { storage.set('psm.level', '1'); } catch (e) {}
+    this.core.init(1);
+    this.view = new RenderView(this.boardCanvas, this.core, this.platform);
+    this._wireView(this.view);
+    this.busy = false;
+    this.press = null;
+    this.picking = null;
+    this.streak = 0;
+    this.stats = this._freshStats();
+    this.uiState.stuck = false;
+    this.uiState.usedOnce = { undo: false, shuffle: false, hint: false };
+    this.setMsg('做得好！正式进入第 1 关', 2200);
+    this.updateHud();
   }
 
   _dismissCoach() {
@@ -414,8 +447,8 @@ class App {
         else if (hit.id === 'settingsSound') this._toggleSound();
         else if (hit.id === 'settingsVibrate') this._toggleVibrate();
         else if (hit.id === 'settingsMusic') this._toggleMusic();
-        else if (hit.id === 'settingsRestart' || hit.id === 'settingsClose' || hit.id === 'settingsReset') {
-          // 按下时记录，松开再触发，以呈现按压点击效果
+        else if (hit.id === 'tutorialSkip') this._finishTutorial();
+        else if (hit.id === 'settingsRestart' || hit.id === 'settingsClose') {
           this.ui.pressId = hit.id;
           this.sound.ui();
         }
@@ -493,7 +526,7 @@ class App {
     this.view.updateDrag(Math.min(pxDist * k, maxDist * G.pitch));
   }
 
-  onTouchEnd() {
+   onTouchEnd() {
     clearTimeout(this._dbgTimer);
     this._dbgTimer = null;
     // 设置面板底部按钮：松开时触发（呈现按压点击效果）
@@ -503,9 +536,6 @@ class App {
       if (id === 'settingsRestart') {
         this.uiState.settings = false;
         this.restart();
-      } else if (id === 'settingsReset') {
-        this.uiState.settings = false;
-        this.resetToLevel1();
       } else if (id === 'settingsClose') {
         this.uiState.settings = false;
         this.view.render();
@@ -593,7 +623,15 @@ class App {
   }
 
   checkWin() {
-    if (this.core.getPatternCount() !== 0) return;
+    if (this.core.getPatternCount() !== 0) {
+      // 教学关：完成首步后撤掉引导箭头，鼓励继续
+      if (this.uiState.tutorial && this.uiState.coachHint) {
+        this.uiState.coachHint = null;
+        this.setMsg('做得好！把剩下的鱼也滑到一起消除', 2800);
+      }
+      return;
+    }
+    if (this.uiState.tutorial) { this._finishTutorial(); return; } // 教学关清盘即转入第 1 关
     // 每通过一关，关卡数 +1 并持久化
     this.uiState.level = Math.max(1, (this.uiState.level || 1) + 1);
     try { storage.set('psm.level', String(this.uiState.level)); } catch (e) {}
@@ -651,27 +689,6 @@ class App {
     this.updateHud();
   }
 
-  // 回到第 1 关：重置进度并存档，从头开始玩（等同于清掉 psm.level 缓存）
-  resetToLevel1() {
-    this.uiState.win = null;
-    this.ui.winPressId = null;
-    RenderView.setPaused(false);
-    if (this.view) this.view._bumpToken();
-    this.busy = false;
-    this.press = null;
-    this.picking = null;
-    this.streak = 0;
-    this.stats = this._freshStats();
-    this.uiState.level = 1;
-    try { storage.set('psm.level', '1'); } catch (e) {}
-    this.core.init(1);
-    this.view = new RenderView(this.boardCanvas, this.core, this.platform);
-    this._wireView(this.view);
-    this.uiState.stuck = false;
-    this.uiState.usedOnce = { undo: false, shuffle: false, hint: false };
-    this.setMsg('');
-    this.updateHud();
-  }
 }
 
 module.exports = { App };
